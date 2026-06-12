@@ -35,9 +35,7 @@ export type PricedAttributionResult = AttributionResult & {
   warnings?: string[];
 };
 
-const pricing = JSON.parse(
-  readFileSync(new URL('./pricing/litellm-snapshot.json', import.meta.url), 'utf8'),
-) as Record<string, PricingRates>;
+const pricing = loadPricing();
 
 export function estimateUsageCost(event: UsageEvent): UsageCostEstimate {
   return estimateTokenCost(event.model, event);
@@ -47,7 +45,9 @@ export function priceAttributionResult(result: AttributionResult): PricedAttribu
   const buckets = result.buckets.map(priceBucket);
   const uncommittedTail = result.uncommittedTail === undefined ? undefined : priceBucket(result.uncommittedTail);
   const allPricedBuckets = uncommittedTail === undefined ? buckets : [...buckets, uncommittedTail];
-  const warnings = allPricedBuckets.flatMap((bucket) => (bucket.warning === undefined ? [] : [bucket.warning]));
+  const warnings = [
+    ...new Set(allPricedBuckets.flatMap((bucket) => (bucket.warning === undefined ? [] : [bucket.warning]))),
+  ];
 
   return {
     ...result,
@@ -59,7 +59,26 @@ export function priceAttributionResult(result: AttributionResult): PricedAttribu
 }
 
 function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
-  const pricingModel = [...bucket.models].sort()[0] ?? 'unknown-model';
+  const sortedModels = [...bucket.models].sort();
+  const pricingModel = sortedModels[0] ?? '';
+
+  if (isZeroTokens(bucket)) {
+    return {
+      ...bucket,
+      costUsd: 0,
+      pricingModel,
+    };
+  }
+
+  if (sortedModels.length > 1) {
+    return {
+      ...bucket,
+      costUsd: 0,
+      pricingModel,
+      warning: `Cannot price mixed-model bucket (${sortedModels.join(', ')}) without per-model token totals.`,
+    };
+  }
+
   const estimate = estimateTokenCost(pricingModel, bucket);
 
   return {
@@ -68,6 +87,49 @@ function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
     pricingModel,
     ...(estimate.warning === undefined ? {} : { warning: estimate.warning }),
   };
+}
+
+function isZeroTokens(tokens: PriceableTokens): boolean {
+  return (
+    tokens.inputTokens === 0 &&
+    tokens.outputTokens === 0 &&
+    tokens.cacheWriteTokens === 0 &&
+    tokens.cacheReadTokens === 0
+  );
+}
+
+function loadPricing(): Record<string, PricingRates> {
+  const parsed = JSON.parse(readFileSync(new URL('./pricing/litellm-snapshot.json', import.meta.url), 'utf8')) as unknown;
+
+  if (!isRecord(parsed)) {
+    throw new Error('Invalid bundled pricing snapshot.');
+  }
+
+  const validated: Record<string, PricingRates> = {};
+
+  for (const [model, rates] of Object.entries(parsed)) {
+    if (!isPricingRates(rates)) {
+      throw new Error(`Invalid bundled pricing for ${model}.`);
+    }
+
+    validated[model] = rates;
+  }
+
+  return validated;
+}
+
+function isPricingRates(value: unknown): value is PricingRates {
+  return (
+    isRecord(value) &&
+    Number.isFinite(value.inputUsdPerMillion) &&
+    Number.isFinite(value.outputUsdPerMillion) &&
+    Number.isFinite(value.cacheWriteUsdPerMillion) &&
+    Number.isFinite(value.cacheReadUsdPerMillion)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function estimateTokenCost(model: string, tokens: PriceableTokens): UsageCostEstimate {

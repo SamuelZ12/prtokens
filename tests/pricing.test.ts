@@ -1,6 +1,10 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { estimateUsageCost, priceAttributionResult } from '../src/pricing.js';
 import type { AttributionResult, UsageEvent } from '../src/types.js';
+
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 function usageEvent(overrides: Partial<UsageEvent> = {}): UsageEvent {
   return {
@@ -20,7 +24,7 @@ describe('estimateUsageCost', () => {
   it('prices input, output, cache writes, and cache reads with distinct rates', () => {
     const price = estimateUsageCost(usageEvent());
 
-    expect(price.costUsd).toBeGreaterThan(0);
+    expect(price.costUsd).toBeCloseTo(4.5675, 10);
     expect(price.pricedTokens).toEqual({
       inputTokens: 1_000_000,
       outputTokens: 100_000,
@@ -85,4 +89,97 @@ describe('priceAttributionResult', () => {
     expect(priced.totalCostUsd).toBeGreaterThan(0);
     expect(priced.buckets[0].costUsd).toBe(priced.totalCostUsd);
   });
+
+  it('prices zero-token empty buckets at zero without warnings', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [bucket({ models: [] })],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBe(0);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.warnings).toBeUndefined();
+    expect(priced.totalCostUsd).toBe(0);
+  });
+
+  it('does not price nonzero mixed-model buckets without per-model token totals', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 1_000_000,
+            models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+          }),
+        ],
+      }),
+    );
+
+    const warning =
+      'Cannot price mixed-model bucket (claude-opus-4-8, claude-sonnet-4-6) without per-model token totals.';
+
+    expect(priced.buckets[0].costUsd).toBe(0);
+    expect(priced.buckets[0].warning).toBe(warning);
+    expect(priced.warnings).toEqual([warning]);
+    expect(priced.totalCostUsd).toBe(0);
+  });
+
+  it('deduplicates aggregate warnings', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({ inputTokens: 1, models: ['unknown-model'] }),
+          bucket({ inputTokens: 2, models: ['unknown-model'] }),
+        ],
+      }),
+    );
+
+    expect(priced.warnings).toEqual(['No bundled pricing for unknown-model; counted tokens without dollar cost.']);
+  });
 });
+
+describe('built pricing module', () => {
+  it('can be loaded after build', () => {
+    execFileSync('npm', ['run', 'build'], { cwd: projectRoot, stdio: 'pipe' });
+
+    expect(() => {
+      execFileSync(process.execPath, ['-e', "import('./dist/pricing.js')"], { cwd: projectRoot, stdio: 'pipe' });
+    }).not.toThrow();
+  });
+});
+
+function attributionResult(overrides: Partial<AttributionResult> = {}): AttributionResult {
+  return {
+    branch: 'main',
+    buckets: [],
+    totals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+      sessionCount: 0,
+      observedEventCount: 0,
+      attributedEventCount: 0,
+      lowConfidenceEventCount: 0,
+    },
+    coverage: {
+      attributedPercent: 0,
+      lowConfidencePercent: 0,
+    },
+    ...overrides,
+  };
+}
+
+function bucket(overrides: Partial<AttributionResult['buckets'][number]> = {}): AttributionResult['buckets'][number] {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheWriteTokens: 0,
+    cacheReadTokens: 0,
+    sessionCount: 0,
+    eventCount: 0,
+    lowConfidenceEventCount: 0,
+    models: ['claude-sonnet-4-6'],
+    ...overrides,
+  };
+}

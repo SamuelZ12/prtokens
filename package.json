@@ -6,7 +6,7 @@
   "bin": { "prtokens": "./dist/cli.js" },
   "files": ["dist", "README.md", "LICENSE"],
   "engines": { "node": ">=20" },
-  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run", "test:watch": "vitest", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "scripts": { "build": "tsc -p tsconfig.json && node -e \"const fs = require('node:fs'); fs.mkdirSync('dist/pricing', { recursive: true }); fs.copyFileSync('src/pricing/litellm-snapshot.json', 'dist/pricing/litellm-snapshot.json');\"", "test": "vitest run", "test:watch": "vitest", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "devDependencies": { "@types/node": "^20.14.0", "typescript": "^5.4.0", "vitest": "^1.6.0" },
   "license": "MIT"
 }
