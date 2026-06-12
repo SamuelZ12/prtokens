@@ -48,6 +48,24 @@ describe('estimateUsageCost', () => {
   });
 });
 
+describe('bundled pricing coverage', () => {
+  it.each([
+    ['claude-fable-5', 10],
+    ['claude-opus-4-8', 5],
+    ['claude-opus-4-7', 5],
+    ['claude-sonnet-4-6', 3],
+    ['claude-haiku-4-5', 1],
+    ['claude-haiku-4-5-20251001', 1],
+  ])('prices %s input at $%d per million tokens', (model, usdPerMillion) => {
+    const price = estimateUsageCost(
+      usageEvent({ model, inputTokens: 1_000_000, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 }),
+    );
+
+    expect(price.warning).toBeUndefined();
+    expect(price.costUsd).toBe(usdPerMillion);
+  });
+});
+
 describe('priceAttributionResult', () => {
   it('adds per-bucket and total dollar estimates', () => {
     const result: AttributionResult = {
@@ -153,10 +171,10 @@ describe('priceAttributionResult', () => {
       }),
     );
 
-    expect(priced.buckets[0].costUsd).toBeCloseTo(27.405, 10);
+    expect(priced.buckets[0].costUsd).toBeCloseTo(12.18, 10);
     expect(priced.buckets[0].warning).toBeUndefined();
     expect(priced.warnings).toBeUndefined();
-    expect(priced.totalCostUsd).toBeCloseTo(27.405, 10);
+    expect(priced.totalCostUsd).toBeCloseTo(12.18, 10);
   });
 
   it('deduplicates aggregate warnings', () => {

@@ -1,14 +1,1430 @@
 {
+  "anthropic.claude-3-5-haiku-20241022-v1:0": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-3-7-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "anthropic.claude-3-7-sonnet-20250219-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "anthropic.claude-3-opus-20240229-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "anthropic.claude-3-sonnet-20240229-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-fable-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "anthropic.claude-haiku-4-5@20251001": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "anthropic.claude-instant-v1": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 2.4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "anthropic.claude-mythos-preview": {
+    "inputUsdPerMillion": 0,
+    "outputUsdPerMillion": 0,
+    "cacheWriteUsdPerMillion": 0,
+    "cacheReadUsdPerMillion": 0
+  },
+  "anthropic.claude-opus-4-1-20250805-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "anthropic.claude-opus-4-20250514-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "anthropic.claude-opus-4-5-20251101-v1:0": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "anthropic.claude-opus-4-6-v1": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "anthropic.claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "anthropic.claude-sonnet-4-20250514-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "anthropic.claude-v1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "anthropic.claude-v2:1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "apac.anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "apac.anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "apac.anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "apac.anthropic.claude-3-sonnet-20240229-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "apac.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.1,
+    "outputUsdPerMillion": 5.5,
+    "cacheWriteUsdPerMillion": 1.375,
+    "cacheReadUsdPerMillion": 0.11
+  },
+  "apac.anthropic.claude-sonnet-4-20250514-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "au.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.1,
+    "outputUsdPerMillion": 5.5,
+    "cacheWriteUsdPerMillion": 1.375,
+    "cacheReadUsdPerMillion": 0.11
+  },
+  "au.anthropic.claude-opus-4-6-v1": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "au.anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "au.anthropic.claude-opus-4-8": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "au.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "au.anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "azure_ai/claude-fable-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "azure_ai/claude-haiku-4-5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "azure_ai/claude-opus-4-1": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "azure_ai/claude-opus-4-5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "azure_ai/claude-opus-4-6": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "azure_ai/claude-opus-4-7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "azure_ai/claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "azure_ai/claude-sonnet-4-5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "azure_ai/claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "bedrock/ap-northeast-1/anthropic.claude-instant-v1": {
+    "inputUsdPerMillion": 2.23,
+    "outputUsdPerMillion": 7.55,
+    "cacheWriteUsdPerMillion": 2.7875,
+    "cacheReadUsdPerMillion": 0.223
+  },
+  "bedrock/ap-northeast-1/anthropic.claude-v1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/ap-northeast-1/anthropic.claude-v2:1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/eu-central-1/anthropic.claude-instant-v1": {
+    "inputUsdPerMillion": 2.48,
+    "outputUsdPerMillion": 8.38,
+    "cacheWriteUsdPerMillion": 3.1,
+    "cacheReadUsdPerMillion": 0.248
+  },
+  "bedrock/eu-central-1/anthropic.claude-v1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/eu-central-1/anthropic.claude-v2:1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/invoke/anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "bedrock/us-east-1/anthropic.claude-instant-v1": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 2.4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "bedrock/us-east-1/anthropic.claude-v1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/us-east-1/anthropic.claude-v2:1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/us-gov-east-1/anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-east-1/anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.3,
+    "outputUsdPerMillion": 1.5,
+    "cacheWriteUsdPerMillion": 0.375,
+    "cacheReadUsdPerMillion": 0.03
+  },
+  "bedrock/us-gov-east-1/anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.2,
+    "outputUsdPerMillion": 6,
+    "cacheWriteUsdPerMillion": 1.5,
+    "cacheReadUsdPerMillion": 0.12
+  },
+  "bedrock/us-gov-east-1/anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-east-1/claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-west-1/anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-west-1/anthropic.claude-3-7-sonnet-20250219-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-west-1/anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.3,
+    "outputUsdPerMillion": 1.5,
+    "cacheWriteUsdPerMillion": 0.375,
+    "cacheReadUsdPerMillion": 0.03
+  },
+  "bedrock/us-gov-west-1/anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.2,
+    "outputUsdPerMillion": 6,
+    "cacheWriteUsdPerMillion": 1.5,
+    "cacheReadUsdPerMillion": 0.12
+  },
+  "bedrock/us-gov-west-1/anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-gov-west-1/claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "bedrock/us-west-2/anthropic.claude-instant-v1": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 2.4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "bedrock/us-west-2/anthropic.claude-v1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/us-west-2/anthropic.claude-v2:1": {
+    "inputUsdPerMillion": 8,
+    "outputUsdPerMillion": 24,
+    "cacheWriteUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.8
+  },
+  "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "claude-3-7-sonnet-20250219": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-3-haiku-20240307": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3,
+    "cacheReadUsdPerMillion": 0.03
+  },
+  "claude-3-opus-20240229": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "claude-4-opus-20250514": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "claude-4-sonnet-20250514": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-fable-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "claude-haiku-4-5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "claude-haiku-4-5-20251001": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "claude-mythos-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "claude-opus-4-1": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "claude-opus-4-1-20250805": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "claude-opus-4-20250514": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "claude-opus-4-5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-5-20251101": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-6": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-6-20260205": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-7-20260416": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "claude-sonnet-4-20250514": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-sonnet-4-5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-sonnet-4-5-20250929": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
   "claude-sonnet-4-6": {
     "inputUsdPerMillion": 3,
     "outputUsdPerMillion": 15,
     "cacheWriteUsdPerMillion": 3.75,
     "cacheReadUsdPerMillion": 0.3
   },
-  "claude-opus-4-8": {
+  "databricks/databricks-claude-3-7-sonnet": {
+    "inputUsdPerMillion": 2.99999,
+    "outputUsdPerMillion": 15.00002,
+    "cacheWriteUsdPerMillion": 3.7499875,
+    "cacheReadUsdPerMillion": 0.299999
+  },
+  "databricks/databricks-claude-haiku-4-5": {
+    "inputUsdPerMillion": 1.00002,
+    "outputUsdPerMillion": 5.00003,
+    "cacheWriteUsdPerMillion": 1.250025,
+    "cacheReadUsdPerMillion": 0.100002
+  },
+  "databricks/databricks-claude-opus-4": {
+    "inputUsdPerMillion": 15.00002,
+    "outputUsdPerMillion": 75.00003,
+    "cacheWriteUsdPerMillion": 18.750025,
+    "cacheReadUsdPerMillion": 1.500002
+  },
+  "databricks/databricks-claude-opus-4-1": {
+    "inputUsdPerMillion": 15.00002,
+    "outputUsdPerMillion": 75.00003,
+    "cacheWriteUsdPerMillion": 18.750025,
+    "cacheReadUsdPerMillion": 1.500002
+  },
+  "databricks/databricks-claude-opus-4-5": {
+    "inputUsdPerMillion": 5.00003,
+    "outputUsdPerMillion": 25.00001,
+    "cacheWriteUsdPerMillion": 6.2500375,
+    "cacheReadUsdPerMillion": 0.500003
+  },
+  "databricks/databricks-claude-sonnet-4": {
+    "inputUsdPerMillion": 2.99999,
+    "outputUsdPerMillion": 15.00002,
+    "cacheWriteUsdPerMillion": 3.7499875,
+    "cacheReadUsdPerMillion": 0.299999
+  },
+  "databricks/databricks-claude-sonnet-4-1": {
+    "inputUsdPerMillion": 2.99999,
+    "outputUsdPerMillion": 15.00002,
+    "cacheWriteUsdPerMillion": 3.7499875,
+    "cacheReadUsdPerMillion": 0.299999
+  },
+  "databricks/databricks-claude-sonnet-4-5": {
+    "inputUsdPerMillion": 2.99999,
+    "outputUsdPerMillion": 15.00002,
+    "cacheWriteUsdPerMillion": 3.7499875,
+    "cacheReadUsdPerMillion": 0.299999
+  },
+  "deepinfra/anthropic/claude-3-7-sonnet-latest": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "deepinfra/anthropic/claude-4-opus": {
+    "inputUsdPerMillion": 16.5,
+    "outputUsdPerMillion": 82.5,
+    "cacheWriteUsdPerMillion": 20.625,
+    "cacheReadUsdPerMillion": 1.65
+  },
+  "deepinfra/anthropic/claude-4-sonnet": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "eu.anthropic.claude-3-5-haiku-20241022-v1:0": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "eu.anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "eu.anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "eu.anthropic.claude-3-7-sonnet-20250219-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "eu.anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "eu.anthropic.claude-3-opus-20240229-v1:0": {
     "inputUsdPerMillion": 15,
     "outputUsdPerMillion": 75,
     "cacheWriteUsdPerMillion": 18.75,
     "cacheReadUsdPerMillion": 1.5
+  },
+  "eu.anthropic.claude-3-sonnet-20240229-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "eu.anthropic.claude-fable-5": {
+    "inputUsdPerMillion": 11,
+    "outputUsdPerMillion": 55,
+    "cacheWriteUsdPerMillion": 13.75,
+    "cacheReadUsdPerMillion": 1.1
+  },
+  "eu.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.1,
+    "outputUsdPerMillion": 5.5,
+    "cacheWriteUsdPerMillion": 1.375,
+    "cacheReadUsdPerMillion": 0.11
+  },
+  "eu.anthropic.claude-opus-4-1-20250805-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "eu.anthropic.claude-opus-4-20250514-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "eu.anthropic.claude-opus-4-5-20251101-v1:0": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "eu.anthropic.claude-opus-4-6-v1": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "eu.anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "eu.anthropic.claude-opus-4-8": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "eu.anthropic.claude-sonnet-4-20250514-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "eu.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "eu.anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "global.anthropic.claude-fable-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "global.anthropic.claude-opus-4-5-20251101-v1:0": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "global.anthropic.claude-opus-4-6-v1": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "global.anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "global.anthropic.claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "global.anthropic.claude-sonnet-4-20250514-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "global.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "global.anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "gmi/anthropic/claude-opus-4": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "gmi/anthropic/claude-opus-4.5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "gmi/anthropic/claude-sonnet-4": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "gmi/anthropic/claude-sonnet-4.5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "gradient_ai/anthropic-claude-3-opus": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "gradient_ai/anthropic-claude-3.5-haiku": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "gradient_ai/anthropic-claude-3.5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "gradient_ai/anthropic-claude-3.7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "jp.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.1,
+    "outputUsdPerMillion": 5.5,
+    "cacheWriteUsdPerMillion": 1.375,
+    "cacheReadUsdPerMillion": 0.11
+  },
+  "jp.anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "jp.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "jp.anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "openrouter/anthropic/claude-3-haiku": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "openrouter/anthropic/claude-3.5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "openrouter/anthropic/claude-3.7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "openrouter/anthropic/claude-haiku-4.5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "openrouter/anthropic/claude-opus-4": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "openrouter/anthropic/claude-opus-4.1": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "openrouter/anthropic/claude-opus-4.5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "openrouter/anthropic/claude-opus-4.6": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "openrouter/anthropic/claude-opus-4.7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "openrouter/anthropic/claude-sonnet-4": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "openrouter/anthropic/claude-sonnet-4.5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "openrouter/anthropic/claude-sonnet-4.6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "replicate/anthropic/claude-3.5-haiku": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "replicate/anthropic/claude-3.5-sonnet": {
+    "inputUsdPerMillion": 3.75,
+    "outputUsdPerMillion": 18.75,
+    "cacheWriteUsdPerMillion": 4.6875,
+    "cacheReadUsdPerMillion": 0.375
+  },
+  "replicate/anthropic/claude-3.7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "replicate/anthropic/claude-4-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "replicate/anthropic/claude-4.5-haiku": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "replicate/anthropic/claude-4.5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "snowflake/claude-3-5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "snowflake/claude-3-7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "snowflake/claude-4-opus": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "snowflake/claude-4-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "snowflake/claude-haiku-4-5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "snowflake/claude-sonnet-4-5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "snowflake/claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.6,
+    "outputUsdPerMillion": 18,
+    "cacheWriteUsdPerMillion": 4.5,
+    "cacheReadUsdPerMillion": 0.36
+  },
+  "us.anthropic.claude-3-5-haiku-20241022-v1:0": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "us.anthropic.claude-3-5-sonnet-20240620-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us.anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us.anthropic.claude-3-7-sonnet-20250219-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us.anthropic.claude-3-haiku-20240307-v1:0": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "us.anthropic.claude-3-opus-20240229-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "us.anthropic.claude-3-sonnet-20240229-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us.anthropic.claude-fable-5": {
+    "inputUsdPerMillion": 11,
+    "outputUsdPerMillion": 55,
+    "cacheWriteUsdPerMillion": 13.75,
+    "cacheReadUsdPerMillion": 1.1
+  },
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "inputUsdPerMillion": 1.1,
+    "outputUsdPerMillion": 5.5,
+    "cacheWriteUsdPerMillion": 1.375,
+    "cacheReadUsdPerMillion": 0.11
+  },
+  "us.anthropic.claude-opus-4-1-20250805-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "us.anthropic.claude-opus-4-20250514-v1:0": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "us.anthropic.claude-opus-4-5-20251101-v1:0": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "us.anthropic.claude-opus-4-6-v1": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "us.anthropic.claude-opus-4-7": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "us.anthropic.claude-opus-4-8": {
+    "inputUsdPerMillion": 5.5,
+    "outputUsdPerMillion": 27.5,
+    "cacheWriteUsdPerMillion": 6.875,
+    "cacheReadUsdPerMillion": 0.55
+  },
+  "us.anthropic.claude-sonnet-4-20250514-v1:0": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "us.anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "us.anthropic.claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3.3,
+    "outputUsdPerMillion": 16.5,
+    "cacheWriteUsdPerMillion": 4.125,
+    "cacheReadUsdPerMillion": 0.33
+  },
+  "vercel_ai_gateway/anthropic/claude-3-5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-3-5-sonnet-20241022": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-3-7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-3-haiku": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3,
+    "cacheReadUsdPerMillion": 0.03
+  },
+  "vercel_ai_gateway/anthropic/claude-3-opus": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vercel_ai_gateway/anthropic/claude-3.5-haiku": {
+    "inputUsdPerMillion": 0.8,
+    "outputUsdPerMillion": 4,
+    "cacheWriteUsdPerMillion": 1,
+    "cacheReadUsdPerMillion": 0.08
+  },
+  "vercel_ai_gateway/anthropic/claude-3.5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-3.7-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-4-opus": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vercel_ai_gateway/anthropic/claude-4-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-haiku-4.5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "vercel_ai_gateway/anthropic/claude-opus-4": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vercel_ai_gateway/anthropic/claude-opus-4.1": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vercel_ai_gateway/anthropic/claude-opus-4.5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vercel_ai_gateway/anthropic/claude-opus-4.6": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vercel_ai_gateway/anthropic/claude-sonnet-4": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vercel_ai_gateway/anthropic/claude-sonnet-4.5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-3-5-haiku": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "vertex_ai/claude-3-5-haiku@20241022": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "vertex_ai/claude-3-5-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-3-5-sonnet@20240620": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-3-7-sonnet@20250219": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-3-haiku": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "vertex_ai/claude-3-haiku@20240307": {
+    "inputUsdPerMillion": 0.25,
+    "outputUsdPerMillion": 1.25,
+    "cacheWriteUsdPerMillion": 0.3125,
+    "cacheReadUsdPerMillion": 0.025
+  },
+  "vertex_ai/claude-3-opus": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-3-opus@20240229": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-3-sonnet": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-3-sonnet@20240229": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-fable-5": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "vertex_ai/claude-fable-5@default": {
+    "inputUsdPerMillion": 10,
+    "outputUsdPerMillion": 50,
+    "cacheWriteUsdPerMillion": 12.5,
+    "cacheReadUsdPerMillion": 1
+  },
+  "vertex_ai/claude-haiku-4-5": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "vertex_ai/claude-haiku-4-5@20251001": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheWriteUsdPerMillion": 1.25,
+    "cacheReadUsdPerMillion": 0.1
+  },
+  "vertex_ai/claude-opus-4": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-opus-4-1": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-opus-4-1@20250805": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-opus-4-5": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-5@20251101": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-6": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-6@default": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-7": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-7@default": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4-8@default": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheWriteUsdPerMillion": 6.25,
+    "cacheReadUsdPerMillion": 0.5
+  },
+  "vertex_ai/claude-opus-4@20250514": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  },
+  "vertex_ai/claude-sonnet-4": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-sonnet-4-5": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-sonnet-4-5@20250929": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-sonnet-4-6@default": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "vertex_ai/claude-sonnet-4@20250514": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
   }
 }

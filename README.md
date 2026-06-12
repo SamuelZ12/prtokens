@@ -35,4 +35,6 @@ Claude Code transcripts never leave your machine. The GitHub comment contains ag
 
 ## Pricing
 
-Costs are estimated at API rates using a bundled LiteLLM pricing snapshot. Subscription users may have zero marginal cost; the number is a notional cost-awareness estimate.
+Costs are estimated at API rates using a bundled LiteLLM pricing snapshot covering Claude models across first-party, Bedrock, and Vertex id forms. Subscription users may have zero marginal cost; the number is a notional cost-awareness estimate.
+
+Refresh the snapshot from LiteLLM's published rates with `npm run update-pricing`.
