@@ -88,7 +88,7 @@ function parseAuthorSections(body: string): AuthorSection[] {
       if (!isAuthorSummary(parsed) || match.index === undefined) continue;
 
       const nextMarker = markers[index + 1];
-      const nextFooter = body.indexOf(FOOTER, match.index);
+      const nextFooter = findFooterLineIndex(body, match.index);
       const nextSectionStart = nextMarker?.index ?? body.length;
       const sectionEnd = nextFooter === -1 ? nextSectionStart : Math.min(nextSectionStart, nextFooter);
 
@@ -102,6 +102,25 @@ function parseAuthorSections(body: string): AuthorSection[] {
   }
 
   return sections;
+}
+
+function findFooterLineIndex(body: string, start: number): number {
+  let searchFrom = start;
+
+  while (searchFrom < body.length) {
+    const index = body.indexOf(FOOTER, searchFrom);
+    if (index === -1) return -1;
+
+    const previous = body[index - 1];
+    const next = body[index + FOOTER.length];
+    if ((previous === undefined || previous === '\n' || previous === '\r') && (next === undefined || next === '\n' || next === '\r')) {
+      return index;
+    }
+
+    searchFrom = index + FOOTER.length;
+  }
+
+  return -1;
 }
 
 function isAuthorSummary(value: unknown): value is AuthorSummary {
@@ -161,7 +180,11 @@ function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSu
 }
 
 function authorMarker(summary: AuthorSummary): string {
-  return `<!-- prtokens:author:${summary.login} ${JSON.stringify(summary)} -->`;
+  return `<!-- prtokens:author:${summary.login} ${htmlCommentSafeJson(summary)} -->`;
+}
+
+function htmlCommentSafeJson(value: AuthorSummary): string {
+  return JSON.stringify(value).replace(/-/g, '\\u002d').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 }
 
 function renderSummaryLine(summary: AuthorSummary): string {
