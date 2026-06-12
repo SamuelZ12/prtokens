@@ -1,5 +1,7 @@
 export { main } from './cli.js';
 export { attributeUsageToCommits } from './attribution-engine.js';
+export { renderPrComment } from './comment-renderer.js';
+export type { RenderAuthorInput, RenderPrCommentInput } from './comment-renderer.js';
 export { estimateUsageCost, priceAttributionResult } from './pricing.js';
 export type { PricedAttributionBucket, PricedAttributionResult, UsageCostEstimate } from './pricing.js';
 export type {
