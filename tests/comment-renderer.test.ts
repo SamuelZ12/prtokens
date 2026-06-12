@@ -86,4 +86,37 @@ describe('renderPrComment', () => {
     expect(body).toContain('### @samuel');
     expect(body).toContain('🪙 **This PR cost ~$5.83 in tokens**');
   });
+
+  it('preserves another author details table when updating the current author', () => {
+    const alexAuthor: RenderAuthorInput = {
+      login: 'alex',
+      totalCostUsd: 1,
+      inputTokens: 100_000,
+      outputTokens: 10_000,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+      sessionCount: 1,
+      models: ['claude-sonnet-4-6'],
+      attributedPercent: 100,
+      lowConfidencePercent: 0,
+      rows: [
+        {
+          sha: 'abc9999',
+          message: 'alex unique detail row',
+          inputTokens: 100_000,
+          outputTokens: 10_000,
+          costUsd: 1,
+          sessionCount: 1,
+        },
+      ],
+    };
+    const existingBody = renderPrComment({ currentAuthor: alexAuthor });
+
+    const body = renderPrComment({ existingBody, currentAuthor });
+
+    expect(body).toContain('| `abc9999` | alex unique detail row | 100k | 10k | ~$1.00 | 1 |');
+    expect(body).toContain('<!-- prtokens:author:samuel ');
+    expect(body).toContain('| `aaa1111` | first commit | 1M | 100k | ~$2.30 | 1 |');
+    expect(body).toContain('🪙 **This PR cost ~$5.83 in tokens**');
+  });
 });
