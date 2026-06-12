@@ -1,0 +1,14 @@
+{
+  "claude-sonnet-4-6": {
+    "inputUsdPerMillion": 3,
+    "outputUsdPerMillion": 15,
+    "cacheWriteUsdPerMillion": 3.75,
+    "cacheReadUsdPerMillion": 0.3
+  },
+  "claude-opus-4-8": {
+    "inputUsdPerMillion": 15,
+    "outputUsdPerMillion": 75,
+    "cacheWriteUsdPerMillion": 18.75,
+    "cacheReadUsdPerMillion": 1.5
+  }
+}
