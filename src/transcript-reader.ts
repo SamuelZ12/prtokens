@@ -48,7 +48,6 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
     return normalizeRepoName(projectPath).includes(normalizedRepo);
   });
   const transcriptFiles = matchingFiles.length > 0 ? matchingFiles : allJsonlFiles;
-  const shouldFilterByRepoFields = matchingFiles.length === 0;
 
   const diagnostics: TranscriptDiagnostics = {
     scannedFileCount: transcriptFiles.length,
@@ -80,7 +79,7 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
         continue;
       }
 
-      if (shouldFilterByRepoFields && !matchesRepoWhenPresent(line, repoRoot)) {
+      if (!matchesRepoWhenPresent(line, repoRoot)) {
         diagnostics.skippedLineCount += 1;
         continue;
       }
@@ -201,10 +200,13 @@ function createUsageCandidate(
   const context = mergeContext(parentContext, source);
   const fallbackKey = `${filePath}:${lineNumber}`;
   const nestedSuffix = nestedPath.length > 0 ? `:${nestedPath.join('.')}` : '';
-  const hasOwnIdentity = typeof context.messageId === 'string' && typeof context.requestId === 'string';
-  const dedupeKey = hasOwnIdentity
-    ? `${context.messageId}:${context.requestId}${nestedSuffix}`
-    : `${fallbackKey}${nestedSuffix}`;
+  const stableIdentity = getStableIdentity(source);
+  const inheritedIdentity =
+    typeof context.messageId === 'string' && typeof context.requestId === 'string'
+      ? `${context.messageId}:${context.requestId}`
+      : undefined;
+  const dedupeKey =
+    stableIdentity ?? (inheritedIdentity ? `${inheritedIdentity}${nestedSuffix}` : `${fallbackKey}${nestedSuffix}`);
 
   return {
     dedupeKey,
@@ -232,6 +234,13 @@ function mergeContext(parentContext: ParentContext, source: JsonObject): ParentC
     model: getString(message?.model) ?? getString(source.model) ?? parentContext.model,
     gitBranch: getString(source.gitBranch) ?? getString(source.git_branch) ?? parentContext.gitBranch,
   };
+}
+
+function getStableIdentity(source: JsonObject): string | undefined {
+  const message = getObject(source.message);
+  const messageId = getString(message?.id) ?? getString(source.id);
+  const requestId = getString(source.requestId);
+  return messageId && requestId ? `${messageId}:${requestId}` : undefined;
 }
 
 function mapUsage(usage: JsonObject): Omit<UsageEvent, 'id' | 'timestamp' | 'model' | 'sessionId' | 'gitBranch'> | undefined {
