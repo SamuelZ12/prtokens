@@ -4,6 +4,8 @@ export { renderPrComment } from './comment-renderer.js';
 export type { RenderAuthorInput, RenderPrCommentInput } from './comment-renderer.js';
 export { estimateUsageCost, priceAttributionResult } from './pricing.js';
 export type { PricedAttributionBucket, PricedAttributionResult, UsageCostEstimate } from './pricing.js';
+export { readClaudeTranscripts } from './transcript-reader.js';
+export type { ReadTranscriptsInput, ReadTranscriptsResult, TranscriptDiagnostics } from './transcript-reader.js';
 export type {
   AttributionBucket,
   AttributionResult,
