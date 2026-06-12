@@ -1,4 +1,4 @@
-import type { AttributionBucket, AttributionResult, CommitRecord, UsageEvent } from './types.js';
+import type { AttributionBucket, AttributionResult, CommitRecord, ModelTokenTotals, UsageEvent } from './types.js';
 
 export interface AttributeUsageInput {
   events: UsageEvent[];
@@ -7,6 +7,7 @@ export interface AttributeUsageInput {
 }
 
 type MutableBucket = AttributionBucket & {
+  modelTokenTotals: ModelTokenTotals;
   sessionIds: Set<string>;
   modelNames: Set<string>;
 };
@@ -85,6 +86,7 @@ function createCommitBucket(commit: CommitRecord): MutableBucket {
     eventCount: 0,
     lowConfidenceEventCount: 0,
     models: [],
+    modelTokenTotals: {},
     sessionIds: new Set<string>(),
     modelNames: new Set<string>(),
   };
@@ -101,6 +103,7 @@ function createTailBucket(): MutableBucket {
     eventCount: 0,
     lowConfidenceEventCount: 0,
     models: [],
+    modelTokenTotals: {},
     sessionIds: new Set<string>(),
     modelNames: new Set<string>(),
   };
@@ -126,6 +129,16 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
   bucket.lowConfidenceEventCount += lowConfidence ? 1 : 0;
   bucket.sessionIds.add(event.sessionId);
   bucket.sessionCount = bucket.sessionIds.size;
+  const modelTotals = (bucket.modelTokenTotals[event.model] ??= {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheWriteTokens: 0,
+    cacheReadTokens: 0,
+  });
+  modelTotals.inputTokens += event.inputTokens;
+  modelTotals.outputTokens += event.outputTokens;
+  modelTotals.cacheWriteTokens += event.cacheWriteTokens;
+  modelTotals.cacheReadTokens += event.cacheReadTokens;
 
   if (!bucket.modelNames.has(event.model)) {
     bucket.modelNames.add(event.model);

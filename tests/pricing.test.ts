@@ -124,6 +124,41 @@ describe('priceAttributionResult', () => {
     expect(priced.totalCostUsd).toBe(0);
   });
 
+  it('prices mixed-model buckets from per-model token totals', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 2_000_000,
+            outputTokens: 200_000,
+            cacheWriteTokens: 20_000,
+            cacheReadTokens: 200_000,
+            models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+            modelTokenTotals: {
+              'claude-sonnet-4-6': {
+                inputTokens: 1_000_000,
+                outputTokens: 100_000,
+                cacheWriteTokens: 10_000,
+                cacheReadTokens: 100_000,
+              },
+              'claude-opus-4-8': {
+                inputTokens: 1_000_000,
+                outputTokens: 100_000,
+                cacheWriteTokens: 10_000,
+                cacheReadTokens: 100_000,
+              },
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBeCloseTo(27.405, 10);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.warnings).toBeUndefined();
+    expect(priced.totalCostUsd).toBeCloseTo(27.405, 10);
+  });
+
   it('deduplicates aggregate warnings', () => {
     const priced = priceAttributionResult(
       attributionResult({

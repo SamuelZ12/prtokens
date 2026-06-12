@@ -168,4 +168,55 @@ describe('attributeUsageToCommits', () => {
       expect.objectContaining({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0, outputTokens: 0 }),
     ]);
   });
+
+  it('preserves per-model token totals for mixed-model buckets', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      events: [
+        usageEvent({
+          id: 'sonnet-event',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:30:00.000Z',
+          model: 'claude-sonnet-4-6',
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          cacheWriteTokens: 10_000,
+          cacheReadTokens: 100_000,
+        }),
+        usageEvent({
+          id: 'opus-event',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:35:00.000Z',
+          model: 'claude-opus-4-8',
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          cacheWriteTokens: 10_000,
+          cacheReadTokens: 100_000,
+        }),
+      ],
+    });
+
+    expect(result.buckets[1]).toMatchObject({
+      inputTokens: 2_000_000,
+      outputTokens: 200_000,
+      cacheWriteTokens: 20_000,
+      cacheReadTokens: 200_000,
+      models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      modelTokenTotals: {
+        'claude-sonnet-4-6': {
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          cacheWriteTokens: 10_000,
+          cacheReadTokens: 100_000,
+        },
+        'claude-opus-4-8': {
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          cacheWriteTokens: 10_000,
+          cacheReadTokens: 100_000,
+        },
+      },
+    });
+  });
 });

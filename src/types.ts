@@ -26,6 +26,8 @@ export interface TokenTotals {
   sessionCount: number;
 }
 
+export type ModelTokenTotals = Record<string, Omit<TokenTotals, 'sessionCount'>>;
+
 export interface AttributionBucket extends TokenTotals {
   commitSha?: string;
   patchId?: string;
@@ -35,6 +37,7 @@ export interface AttributionBucket extends TokenTotals {
   eventCount: number;
   lowConfidenceEventCount: number;
   models: string[];
+  modelTokenTotals?: ModelTokenTotals;
 }
 
 export interface AttributionResult {

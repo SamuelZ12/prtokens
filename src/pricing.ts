@@ -71,6 +71,16 @@ function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
   }
 
   if (sortedModels.length > 1) {
+    const perModelEstimate = estimateModelTokenTotals(bucket, sortedModels);
+    if (perModelEstimate !== undefined) {
+      return {
+        ...bucket,
+        costUsd: perModelEstimate.costUsd,
+        pricingModel,
+        ...(perModelEstimate.warning === undefined ? {} : { warning: perModelEstimate.warning }),
+      };
+    }
+
     return {
       ...bucket,
       costUsd: 0,
@@ -86,6 +96,23 @@ function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
     costUsd: estimate.costUsd,
     pricingModel,
     ...(estimate.warning === undefined ? {} : { warning: estimate.warning }),
+  };
+}
+
+function estimateModelTokenTotals(
+  bucket: AttributionBucket,
+  sortedModels: string[],
+): { costUsd: number; warning?: string } | undefined {
+  if (bucket.modelTokenTotals === undefined || sortedModels.some((model) => bucket.modelTokenTotals?.[model] === undefined)) {
+    return undefined;
+  }
+
+  const estimates = sortedModels.map((model) => estimateTokenCost(model, bucket.modelTokenTotals![model]));
+  const warnings = [...new Set(estimates.flatMap((estimate) => (estimate.warning === undefined ? [] : [estimate.warning])))];
+
+  return {
+    costUsd: estimates.reduce((total, estimate) => total + estimate.costUsd, 0),
+    ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
   };
 }
 
