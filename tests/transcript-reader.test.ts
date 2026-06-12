@@ -21,7 +21,7 @@ describe('readClaudeTranscripts', () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
     const normalizedRepo = repoRoot.replaceAll('/', '-');
-    const projectDir = join(homeDir, '.claude', 'projects', `project-${normalizedRepo}`);
+    const projectDir = join(homeDir, '.claude', 'projects', normalizedRepo);
     await mkdir(projectDir, { recursive: true });
 
     await writeFile(
@@ -53,7 +53,7 @@ describe('readClaudeTranscripts', () => {
     expect(result.diagnostics.dedupedEventCount).toBe(1);
   });
 
-  it('falls back to all project transcripts and counts repo mismatches as skipped', async () => {
+  it('falls back to all project transcripts and requires explicit matching repo metadata', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
     const otherRepoRoot = '/Users/samuelzhang/Documents/GitHub/other';
@@ -71,8 +71,26 @@ describe('readClaudeTranscripts', () => {
 
     const result = await readClaudeTranscripts({ repoRoot, homeDir });
 
-    expect(result.events).toHaveLength(2);
-    expect(result.events.map((event) => event.inputTokens)).toEqual([100, 300]);
+    expect(result.events).toHaveLength(1);
+    expect(result.events.map((event) => event.inputTokens)).toEqual([100]);
+    expect(result.diagnostics.skippedLineCount).toBe(2);
+  });
+
+  it('does not read metadata-less fallback events from a prefix-colliding project directory', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const otherRepoRoot = '/Users/me/repo-copy';
+    const projectDir = join(homeDir, '.claude', 'projects', otherRepoRoot.replaceAll('/', '-'));
+    await mkdir(projectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'session.jsonl'),
+      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10}}}',
+    );
+
+    const result = await readClaudeTranscripts({ repoRoot, homeDir });
+
+    expect(result.events).toHaveLength(0);
     expect(result.diagnostics.skippedLineCount).toBe(1);
   });
 

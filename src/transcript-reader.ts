@@ -49,6 +49,7 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
     return normalizeRepoName(projectDirName) === normalizedRepo;
   });
   const transcriptFiles = matchingFiles.length > 0 ? matchingFiles : allJsonlFiles;
+  const requireRepoMetadata = matchingFiles.length === 0;
 
   const diagnostics: TranscriptDiagnostics = {
     scannedFileCount: transcriptFiles.length,
@@ -80,7 +81,8 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
         continue;
       }
 
-      if (!matchesRepoWhenPresent(line, repoRoot)) {
+      const matchesRepo = requireRepoMetadata ? matchesRepoExplicitly(line, repoRoot) : matchesRepoWhenPresent(line, repoRoot);
+      if (!matchesRepo) {
         diagnostics.skippedLineCount += 1;
         continue;
       }
@@ -269,6 +271,12 @@ function matchesRepoWhenPresent(line: JsonObject, repoRoot: string): boolean {
   if (cwd === undefined && lineRepoRoot === undefined) {
     return true;
   }
+  return cwd === repoRoot || lineRepoRoot === repoRoot;
+}
+
+function matchesRepoExplicitly(line: JsonObject, repoRoot: string): boolean {
+  const cwd = getString(line.cwd);
+  const lineRepoRoot = getString(line.repoRoot);
   return cwd === repoRoot || lineRepoRoot === repoRoot;
 }
 
