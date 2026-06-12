@@ -28,6 +28,7 @@ interface CliFlags {
 }
 
 const noTranscriptsMessage = 'No Claude Code transcripts found for this repo.';
+const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
 
 export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promise<number> {
   const cliDeps = withDefaultDeps(deps);
@@ -36,10 +37,20 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     return 1;
   }
 
-  const resolvedPr = await cliDeps.resolvePullRequest({
-    cwd: cliDeps.cwd,
-    ...(flags.prNumber === undefined ? {} : { prNumber: flags.prNumber }),
-  });
+  let resolvedPr;
+  try {
+    resolvedPr = await cliDeps.resolvePullRequest({
+      cwd: cliDeps.cwd,
+      ...(flags.prNumber === undefined ? {} : { prNumber: flags.prNumber }),
+    });
+  } catch (error) {
+    if (isGhSetupError(error)) {
+      cliDeps.stderr(ghSetupMessage);
+      return 1;
+    }
+
+    throw error;
+  }
   if (resolvedPr.kind === 'no-pr') {
     cliDeps.stdout(resolvedPr.message);
     return 0;
@@ -181,6 +192,19 @@ function printDiagnostics(diagnostics: TranscriptDiagnostics, stderr: (message: 
   stderr(`malformed-line-count: ${diagnostics.malformedLineCount}`);
   stderr(`skipped-line-count: ${diagnostics.skippedLineCount}`);
   stderr(`dedupe-count: ${diagnostics.dedupedEventCount}`);
+}
+
+function isGhSetupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr) : '';
+  const detail = `${message}\n${stderr}`.toLowerCase();
+
+  return (
+    detail.includes('spawn gh enoent') ||
+    detail.includes('gh: command not found') ||
+    detail.includes('gh auth login') ||
+    detail.includes('authentication required')
+  );
 }
 
 function toRenderAuthorInput(priced: PricedAttributionResult, authorLogin: string): RenderAuthorInput {

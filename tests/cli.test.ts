@@ -116,6 +116,45 @@ describe('runCli', () => {
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 
+  it('prints gh setup guidance when PR resolution fails because gh is missing', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),
+    });
+
+    await expect(runCli([], deps)).resolves.toBe(1);
+
+    expect(deps.stderr).toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
+    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.ensureGhReady).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('prints gh setup guidance when PR resolution fails because gh is unauthenticated', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockRejectedValue(Object.assign(new Error('gh failed'), { stderr: 'authentication required' })),
+    });
+
+    await expect(runCli([], deps)).resolves.toBe(1);
+
+    expect(deps.stderr).toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
+    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.ensureGhReady).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('does not convert unrelated PR resolution errors to gh setup guidance', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockRejectedValue(new Error('git failed unexpectedly')),
+    });
+
+    await expect(runCli([], deps)).rejects.toThrow('git failed unexpectedly');
+
+    expect(deps.stderr).not.toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
+    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.ensureGhReady).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
   it('prints friendly message and exits successfully when no transcripts exist', async () => {
     const deps = createDeps({
       readClaudeTranscripts: vi.fn().mockResolvedValue({
