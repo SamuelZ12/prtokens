@@ -136,6 +136,28 @@ describe('runCli', () => {
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 
+  it('--verbose prints diagnostics when no transcripts exist', async () => {
+    const deps = createDeps({
+      readClaudeTranscripts: vi.fn().mockResolvedValue({
+        events: [],
+        diagnostics: {
+          scannedFileCount: 7,
+          malformedLineCount: 2,
+          dedupedEventCount: 4,
+          skippedLineCount: 3,
+        },
+      }),
+    });
+
+    await expect(runCli(['--verbose'], deps)).resolves.toBe(0);
+
+    expect(deps.stdout).toHaveBeenCalledWith('No Claude Code transcripts found for this repo.');
+    const stderr = deps.stderr.mock.calls.map(([message]) => message).join('\n');
+    expect(stderr).toContain('malformed-line-count: 2');
+    expect(stderr).toContain('skipped-line-count: 3');
+    expect(stderr).toContain('dedupe-count: 4');
+  });
+
   it('prints gh setup guidance and returns failure when gh is unavailable', async () => {
     const deps = createDeps({
       ensureGhReady: vi.fn().mockResolvedValue({ ok: false, message: 'Install GitHub CLI and run gh auth login.' }),

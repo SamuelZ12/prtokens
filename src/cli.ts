@@ -46,6 +46,10 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
   }
 
   const transcripts = await cliDeps.readClaudeTranscripts({ repoRoot: cliDeps.cwd });
+  if (flags.verbose) {
+    printDiagnostics(transcripts.diagnostics, cliDeps.stderr);
+  }
+
   if (transcripts.events.length === 0) {
     cliDeps.stdout(noTranscriptsMessage);
     return 0;
@@ -58,10 +62,6 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
   });
   const priced = priceAttributionResult(attribution);
   const markdown = renderPrComment({ currentAuthor: toRenderAuthorInput(priced, resolvedPr.pr.authorLogin) });
-
-  if (flags.verbose) {
-    printDiagnostics(transcripts.diagnostics, cliDeps.stderr);
-  }
 
   if (flags.dryRun) {
     cliDeps.stdout(markdown);
