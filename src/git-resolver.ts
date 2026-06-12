@@ -40,7 +40,7 @@ interface LocalCommit {
   sha: string;
   authoredAt: string;
   message: string;
-  patchId: string;
+  patchId: string | undefined;
 }
 
 const prJsonFields = 'number,url,headRefName,baseRefName,author,commits';
@@ -103,11 +103,20 @@ export async function resolvePullRequest(input: {
     nameWithOwner: string;
   };
   const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName);
-  const localCommitsByPatchId = new Map(localCommits.map((commit) => [commit.patchId, commit]));
+  const localCommitsByPatchId = new Map<string, LocalCommit>();
+  for (const commit of localCommits) {
+    if (commit.patchId !== undefined) {
+      localCommitsByPatchId.set(commit.patchId, commit);
+    }
+  }
   const commits: CommitRecord[] = [];
 
   for (const prCommit of pr.commits) {
     const patchId = await readPatchId(runner, cwd, prCommit.oid);
+    if (patchId === undefined) {
+      continue;
+    }
+
     const localCommit = localCommitsByPatchId.get(patchId);
 
     if (localCommit === undefined) {
@@ -116,7 +125,7 @@ export async function resolvePullRequest(input: {
 
     commits.push({
       sha: prCommit.oid,
-      patchId: localCommit.patchId,
+      patchId,
       message: prCommit.messageHeadline || localCommit.message,
       authorLogin: pr.author.login,
       authoredAt: localCommit.authoredAt || prCommit.authoredDate,
@@ -163,11 +172,11 @@ async function readLocalCommits(runner: CommandRunner, cwd: string | undefined, 
   return commits;
 }
 
-async function readPatchId(runner: CommandRunner, cwd: string | undefined, sha: string): Promise<string> {
+async function readPatchId(runner: CommandRunner, cwd: string | undefined, sha: string): Promise<string | undefined> {
   const diff = await runner.run('git', ['show', sha, '--pretty=format:'], { cwd });
   const patchId = await runner.run('git', ['patch-id', '--stable'], { cwd, input: diff.stdout });
 
-  return patchId.stdout.trim().split(/\s+/)[0] ?? '';
+  return patchId.stdout.trim().split(/\s+/)[0] || undefined;
 }
 
 function isNoPullRequestError(error: unknown): boolean {

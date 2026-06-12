@@ -104,4 +104,86 @@ describe('resolvePullRequest', () => {
       },
     ]);
   });
+
+  it('does not match commits when local and PR patch-id output is empty', async () => {
+    const runner = createRunner((command, args, options) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') return { stdout: JSON.stringify(prJson), stderr: '' };
+      if (command === 'gh' && args.join(' ') === 'repo view --json nameWithOwner') {
+        return { stdout: JSON.stringify({ nameWithOwner: 'sam/prtokens' }), stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'log') {
+        return { stdout: 'abc\u00002026-06-12T10:00:00Z\u0000local feat\n', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'show abc --pretty=format:') return { stdout: 'local diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'show def --pretty=format:') return { stdout: 'pr diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'local diff') {
+        return { stdout: '', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'pr diff') {
+        return { stdout: '', stderr: '' };
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result.kind).toBe('ok');
+    expect(result.kind === 'ok' ? result.commits : []).toEqual([]);
+  });
+
+  it('ignores local commits without patch-id while keeping valid patch-id matches', async () => {
+    const prWithTwoCommits = {
+      ...prJson,
+      commits: [
+        { oid: 'def', messageHeadline: 'empty patch', authoredDate: '2026-06-12T10:00:00Z' },
+        { oid: 'jkl', messageHeadline: 'valid patch', authoredDate: '2026-06-12T11:00:00Z' },
+      ],
+    };
+    const runner = createRunner((command, args, options) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') return { stdout: JSON.stringify(prWithTwoCommits), stderr: '' };
+      if (command === 'gh' && args.join(' ') === 'repo view --json nameWithOwner') {
+        return { stdout: JSON.stringify({ nameWithOwner: 'sam/prtokens' }), stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'log') {
+        return {
+          stdout: 'abc\u00002026-06-12T10:00:00Z\u0000empty local\nghi\u00002026-06-12T11:00:00Z\u0000valid local\n',
+          stderr: '',
+        };
+      }
+      if (command === 'git' && args.join(' ') === 'show abc --pretty=format:') return { stdout: 'empty local diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'show ghi --pretty=format:') return { stdout: 'valid local diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'show def --pretty=format:') return { stdout: 'empty pr diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'show jkl --pretty=format:') return { stdout: 'valid pr diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'empty local diff') {
+        return { stdout: '', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'empty pr diff') {
+        return { stdout: '', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'valid local diff') {
+        return { stdout: 'patch-2 ghi\n', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'valid pr diff') {
+        return { stdout: 'patch-2 jkl\n', stderr: '' };
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result.kind).toBe('ok');
+    expect(result.kind === 'ok' ? result.commits : []).toEqual([
+      {
+        sha: 'jkl',
+        patchId: 'patch-2',
+        message: 'valid patch',
+        authorLogin: 'sam',
+        authoredAt: '2026-06-12T11:00:00Z',
+      },
+    ]);
+  });
 });
