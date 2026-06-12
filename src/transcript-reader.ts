@@ -81,6 +81,7 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
       }
 
       if (shouldFilterByRepoFields && !matchesRepoWhenPresent(line, repoRoot)) {
+        diagnostics.skippedLineCount += 1;
         continue;
       }
 
