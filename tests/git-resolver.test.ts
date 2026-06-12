@@ -54,6 +54,20 @@ describe('resolvePullRequest', () => {
     expect(result.kind === 'ok' ? result.pr.number : undefined).toBe(12);
   });
 
+  it('returns no-pr without invoking gh when the current directory is not a git repository', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') {
+        throw Object.assign(new Error('git failed'), { exitCode: 128, stderr: 'fatal: not a git repository' });
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result).toMatchObject({ kind: 'no-pr', branch: '' });
+    expect(runner.commands.some((command) => command.command === 'gh')).toBe(false);
+  });
+
   it('returns no-pr instead of throwing when gh pr view finds no pull requests', async () => {
     const runner = createRunner((command, args) => {
       if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };

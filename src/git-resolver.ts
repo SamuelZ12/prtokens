@@ -85,9 +85,18 @@ export async function resolvePullRequest(input: {
   prNumber?: number;
 } = {}): Promise<ResolvePrResult> {
   const runner = input.runner ?? defaultCommandRunner;
-  const branch = (await runner.run('git', ['branch', '--show-current'], { cwd: input.cwd })).stdout.trim();
-  const repoRoot = (await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd: input.cwd })).stdout.trim();
-  const cwd = repoRoot || input.cwd;
+  let branch = '';
+  let cwd = input.cwd;
+  try {
+    branch = (await runner.run('git', ['branch', '--show-current'], { cwd: input.cwd })).stdout.trim();
+    const repoRoot = (await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd: input.cwd })).stdout.trim();
+    cwd = repoRoot || input.cwd;
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return { kind: 'no-pr', branch, message: 'No git repository found for this directory.' };
+    }
+    throw error;
+  }
 
   let pr: GhPullRequest;
   try {
@@ -184,13 +193,22 @@ function isNoPullRequestError(error: unknown): boolean {
     return false;
   }
 
-  const message = error instanceof Error ? error.message : '';
-  const stderr = 'stderr' in error ? String((error as { stderr?: unknown }).stderr) : '';
-  const detail = `${message}\n${stderr}`.toLowerCase();
+  const detail = errorDetail(error);
 
   return (
     detail.includes('no pull requests found') ||
     detail.includes('no git remotes found') ||
     detail.includes('no repository found')
   );
+}
+
+function isNotGitRepositoryError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && errorDetail(error).includes('not a git repository');
+}
+
+function errorDetail(error: object): string {
+  const message = error instanceof Error ? error.message : '';
+  const stderr = 'stderr' in error ? String((error as { stderr?: unknown }).stderr) : '';
+
+  return `${message}\n${stderr}`.toLowerCase();
 }
