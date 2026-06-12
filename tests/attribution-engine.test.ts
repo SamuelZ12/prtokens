@@ -93,6 +93,25 @@ describe('attributeUsageToCommits', () => {
     expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0 });
   });
 
+  it('sorts commits by authored time without mutating caller input', () => {
+    const unsortedCommits = [commits[1], commits[0]];
+
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits: unsortedCommits,
+      events: [
+        usageEvent({
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:30:00.000Z',
+        }),
+      ],
+    });
+
+    expect(result.buckets.map((bucket) => bucket.commitSha)).toEqual(['aaa1111', 'bbb2222']);
+    expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 1, inputTokens: 100 });
+    expect(unsortedCommits.map((commit) => commit.sha)).toEqual(['bbb2222', 'aaa1111']);
+  });
+
   it('splits branch-hopping sessions by event branch while observing the full event count', () => {
     const result = attributeUsageToCommits({
       branch: 'main',

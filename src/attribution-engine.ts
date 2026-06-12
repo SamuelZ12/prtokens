@@ -12,7 +12,8 @@ type MutableBucket = AttributionBucket & {
 };
 
 export function attributeUsageToCommits(input: AttributeUsageInput): AttributionResult {
-  const buckets = input.commits.map((commit) => createCommitBucket(commit));
+  const commits = [...input.commits].sort((left, right) => Date.parse(left.authoredAt) - Date.parse(right.authoredAt));
+  const buckets = commits.map((commit) => createCommitBucket(commit));
   let uncommittedTail: MutableBucket | undefined;
 
   for (const event of input.events) {
@@ -22,7 +23,7 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
       continue;
     }
 
-    const bucket = firstBucketAtOrAfterEvent(buckets, input.commits, event) ?? (uncommittedTail ??= createTailBucket());
+    const bucket = firstBucketAtOrAfterEvent(buckets, commits, event) ?? (uncommittedTail ??= createTailBucket());
     addEventToBucket(bucket, event, lowConfidence);
   }
 
