@@ -7,6 +7,8 @@ interface IssueComment {
   body: string;
 }
 
+type ParseCommentsResult = { ok: true; comments: IssueComment[] } | { ok: false; error: string };
+
 export async function ensureGhReady(runner: CommandRunner): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
     await runner.run('gh', ['auth', 'status']);
@@ -26,7 +28,12 @@ export async function upsertPrComment(input: {
 
   try {
     const result = await input.runner.run('gh', ['api', `repos/${input.repository}/issues/${input.prNumber}/comments`]);
-    comments = parseIssueComments(result.stdout);
+    const parsed = parseIssueComments(result.stdout);
+    if (!parsed.ok) {
+      return { ok: false, renderedMarkdown: input.markdown, error: parsed.error };
+    }
+
+    comments = parsed.comments;
   } catch (error) {
     return { ok: false, renderedMarkdown: input.markdown, error: safeErrorMessage(error) };
   }
@@ -38,24 +45,55 @@ export async function upsertPrComment(input: {
 
   try {
     const result = await input.runner.run('gh', args);
-    return { ok: true, commentUrl: parseCommentUrl(result.stdout) };
+    const commentUrl = parseCommentUrl(result.stdout);
+    return commentUrl === undefined ? { ok: true } : { ok: true, commentUrl };
   } catch (error) {
     return { ok: false, renderedMarkdown: input.markdown, error: safeErrorMessage(error) };
   }
 }
 
-function parseIssueComments(stdout: string): IssueComment[] {
+function parseIssueComments(stdout: string): ParseCommentsResult {
   try {
     const value = JSON.parse(stdout) as unknown;
 
     if (!Array.isArray(value)) {
-      return [];
+      return { ok: false, error: 'GitHub comments response was not an array.' };
     }
 
-    return value.filter(isIssueComment);
+    const comments: IssueComment[] = [];
+    for (const entry of value) {
+      const body = readCommentBody(entry);
+      if (body?.includes(prtokensMarker) && !hasCommentId(entry)) {
+        return { ok: false, error: 'Found an existing prtokens comment without a usable id.' };
+      }
+
+      if (isIssueComment(entry)) {
+        comments.push(entry);
+      }
+    }
+
+    return { ok: true, comments };
   } catch {
-    return [];
+    return { ok: false, error: 'GitHub comments response was not valid JSON.' };
   }
+}
+
+function readCommentBody(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  const body = (value as { body?: unknown }).body;
+  return typeof body === 'string' ? body : undefined;
+}
+
+function hasCommentId(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const id = (value as { id?: unknown }).id;
+  return typeof id === 'number' || typeof id === 'string';
 }
 
 function isIssueComment(value: unknown): value is IssueComment {

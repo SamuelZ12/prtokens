@@ -122,4 +122,82 @@ describe('upsertPrComment', () => {
 
     expect(result).toEqual({ ok: false, renderedMarkdown: markdown, error: 'gh api failed' });
   });
+
+  it('returns rendered markdown without posting when the comment list JSON is malformed', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return { stdout: '{not json}', stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toMatchObject({ ok: false, renderedMarkdown: markdown });
+    expect(runner.commands).toEqual([{ command: 'gh', args: ['api', 'repos/OWNER/REPO/issues/12/comments'] }]);
+  });
+
+  it('returns rendered markdown without posting when the comment list is not an array', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return { stdout: JSON.stringify({ id: 99, body: markdown }), stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toMatchObject({ ok: false, renderedMarkdown: markdown });
+    expect(runner.commands).toEqual([{ command: 'gh', args: ['api', 'repos/OWNER/REPO/issues/12/comments'] }]);
+  });
+
+  it('returns rendered markdown without posting when a marker comment has no usable id', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return { stdout: JSON.stringify([{ body: '<!-- prtokens:v1 -->' }]), stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toMatchObject({ ok: false, renderedMarkdown: markdown });
+    expect(runner.commands).toEqual([{ command: 'gh', args: ['api', 'repos/OWNER/REPO/issues/12/comments'] }]);
+  });
+
+  it('returns rendered markdown when listing comments fails', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        throw new Error('gh api list failed');
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toEqual({ ok: false, renderedMarkdown: markdown, error: 'gh api list failed' });
+    expect(runner.commands).toEqual([{ command: 'gh', args: ['api', 'repos/OWNER/REPO/issues/12/comments'] }]);
+  });
+
+  it('omits commentUrl when a successful create response has no html_url', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return { stdout: JSON.stringify([]), stderr: '' };
+      }
+
+      if (command === 'gh' && args.join(' ') === `api --method POST repos/OWNER/REPO/issues/12/comments -f body=${markdown}`) {
+        return { stdout: JSON.stringify({ id: 100 }), stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toEqual({ ok: true });
+  });
 });
