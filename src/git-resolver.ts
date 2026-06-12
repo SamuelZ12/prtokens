@@ -180,10 +180,17 @@ async function readPatchId(runner: CommandRunner, cwd: string | undefined, sha: 
 }
 
 function isNoPullRequestError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('stderr' in error)) {
+  if (typeof error !== 'object' || error === null) {
     return false;
   }
 
-  const stderr = String((error as { stderr?: unknown }).stderr).toLowerCase();
-  return stderr.includes('no pull requests found');
+  const message = error instanceof Error ? error.message : '';
+  const stderr = 'stderr' in error ? String((error as { stderr?: unknown }).stderr) : '';
+  const detail = `${message}\n${stderr}`.toLowerCase();
+
+  return (
+    detail.includes('no pull requests found') ||
+    detail.includes('no git remotes found') ||
+    detail.includes('no repository found')
+  );
 }

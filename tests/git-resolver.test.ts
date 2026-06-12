@@ -69,6 +69,21 @@ describe('resolvePullRequest', () => {
     expect(result).toMatchObject({ kind: 'no-pr', branch: 'feature' });
   });
 
+  it('returns no-pr instead of throwing when gh pr view cannot find git remotes', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') {
+        throw Object.assign(new Error('gh failed'), { exitCode: 1, stderr: 'no git remotes found' });
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result).toMatchObject({ kind: 'no-pr', branch: 'feature' });
+  });
+
   it('matches local commits to PR commits by patch-id rather than SHA', async () => {
     const runner = createRunner((command, args, options) => {
       if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
