@@ -1,0 +1,12 @@
+{
+  "name": "prtokens",
+  "version": "0.0.0",
+  "description": "Attribute Claude Code token usage to GitHub pull requests.",
+  "type": "module",
+  "bin": { "prtokens": "./dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run", "test:watch": "vitest", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "devDependencies": { "@types/node": "^20.14.0", "typescript": "^5.4.0", "vitest": "^1.6.0" },
+  "license": "MIT"
+}
