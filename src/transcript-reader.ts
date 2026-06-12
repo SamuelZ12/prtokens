@@ -45,7 +45,8 @@ export async function readClaudeTranscripts(input: ReadTranscriptsInput): Promis
   const normalizedRepo = normalizeRepoName(repoRoot);
   const matchingFiles = allJsonlFiles.filter((filePath) => {
     const projectPath = path.relative(projectsDir, path.dirname(filePath));
-    return normalizeRepoName(projectPath).includes(normalizedRepo);
+    const projectDirName = projectPath.split(path.sep)[0];
+    return normalizeRepoName(projectDirName) === normalizedRepo;
   });
   const transcriptFiles = matchingFiles.length > 0 ? matchingFiles : allJsonlFiles;
 

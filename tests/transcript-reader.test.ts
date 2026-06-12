@@ -76,7 +76,7 @@ describe('readClaudeTranscripts', () => {
     expect(result.diagnostics.skippedLineCount).toBe(1);
   });
 
-  it('filters repo-field mismatches from prefix-colliding project directories', async () => {
+  it('excludes repo-field mismatches from prefix-colliding project directories', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/me/repo';
     const otherRepoRoot = '/Users/me/repo-copy';
@@ -99,7 +99,32 @@ describe('readClaudeTranscripts', () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({ inputTokens: 100, sessionId: 's1' });
-    expect(result.diagnostics.skippedLineCount).toBe(1);
+    expect(result.diagnostics.skippedLineCount).toBe(0);
+  });
+
+  it('does not read metadata-less events from prefix-colliding project directories', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const otherRepoRoot = '/Users/me/repo-copy';
+    const projectsDir = join(homeDir, '.claude', 'projects');
+    const projectDir = join(projectsDir, repoRoot.replaceAll('/', '-'));
+    const collidingProjectDir = join(projectsDir, otherRepoRoot.replaceAll('/', '-'));
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(collidingProjectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'session.jsonl'),
+      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10}}}',
+    );
+    await writeFile(
+      join(collidingProjectDir, 'session.jsonl'),
+      '{"sessionId":"s2","timestamp":"2026-06-12T10:05:00.000Z","requestId":"r2","message":{"id":"m2","model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":20}}}',
+    );
+
+    const result = await readClaudeTranscripts({ repoRoot, homeDir });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({ inputTokens: 100, sessionId: 's1' });
   });
 
   it('dedupes repeated nested sidechain usage by stable nested identity', async () => {
