@@ -65,6 +65,42 @@ describe('upsertPrComment', () => {
     ]);
   });
 
+  it('renders with the existing prtokens comment body before updating', async () => {
+    const existingBody = ['<!-- prtokens:v1 -->', '', '<!-- prtokens:author:other {"login":"other","totalCostUsd":1,"inputTokens":1,"outputTokens":1,"sessionCount":1,"models":[],"attributedPercent":100,"lowConfidencePercent":0} -->', '### @other'].join('\n');
+    const mergedMarkdown = `${existingBody}\n\n<!-- prtokens:author:runner {} -->`;
+    const seenExistingBodies: Array<string | undefined> = [];
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return {
+          stdout: JSON.stringify([
+            { id: 88, body: 'unrelated comment' },
+            { id: 99, body: existingBody, html_url: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' },
+          ]),
+          stderr: '',
+        };
+      }
+
+      if (command === 'gh' && args.join(' ') === `api --method PATCH repos/OWNER/REPO/issues/comments/99 -f body=${mergedMarkdown}`) {
+        return { stdout: JSON.stringify({ html_url: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' }), stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({
+      runner,
+      repository: 'OWNER/REPO',
+      prNumber: 12,
+      renderMarkdown(existing) {
+        seenExistingBodies.push(existing);
+        return mergedMarkdown;
+      },
+    });
+
+    expect(result).toEqual({ ok: true, commentUrl: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' });
+    expect(seenExistingBodies).toEqual([existingBody]);
+  });
+
   it('creates a new issue comment when no marker exists', async () => {
     const runner = createRunner((command, args) => {
       if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {

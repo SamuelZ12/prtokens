@@ -14,6 +14,7 @@ export interface PullRequestInfo {
   url: string;
   headRefName: string;
   authorLogin: string;
+  currentUserLogin: string;
   repository: string;
 }
 
@@ -111,6 +112,7 @@ export async function resolvePullRequest(input: {
   const repository = JSON.parse((await runner.run('gh', ['repo', 'view', '--json', 'nameWithOwner'], { cwd })).stdout) as {
     nameWithOwner: string;
   };
+  const currentUserLogin = (await readAuthenticatedUserLogin(runner, cwd)) ?? pr.author.login;
   const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName);
   const localCommitsByPatchId = new Map<string, LocalCommit>();
   for (const commit of localCommits) {
@@ -151,10 +153,24 @@ export async function resolvePullRequest(input: {
       url: pr.url,
       headRefName: pr.headRefName,
       authorLogin: pr.author.login,
+      currentUserLogin,
       repository: repository.nameWithOwner,
     },
     commits,
   };
+}
+
+async function readAuthenticatedUserLogin(runner: CommandRunner, cwd: string | undefined): Promise<string | undefined> {
+  try {
+    const result = await runner.run('gh', ['api', 'user', '--jq', '.login'], { cwd });
+    return result.stdout.trim() || undefined;
+  } catch (error) {
+    if (isGhSetupError(error)) {
+      throw error;
+    }
+
+    return undefined;
+  }
 }
 
 async function readPullRequest(runner: CommandRunner, cwd: string | undefined, prNumber: number | undefined): Promise<GhPullRequest> {
@@ -204,6 +220,21 @@ function isNoPullRequestError(error: unknown): boolean {
 
 function isNotGitRepositoryError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && errorDetail(error).includes('not a git repository');
+}
+
+function isGhSetupError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const detail = errorDetail(error);
+
+  return (
+    detail.includes('spawn gh enoent') ||
+    detail.includes('gh: command not found') ||
+    detail.includes('gh auth login') ||
+    detail.includes('authentication required')
+  );
 }
 
 function errorDetail(error: object): string {

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isEntrypoint, runCli } from '../src/cli.js';
+import { renderPrComment } from '../src/comment-renderer.js';
 
 function usageEvent(overrides = {}) {
   return {
@@ -83,6 +84,32 @@ describe('runCli', () => {
     expect(deps.stdout.mock.calls[0]?.[0]).toContain('@octocat');
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('uses the authenticated GitHub user login for the current author section', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue(
+        okPr({
+          pr: {
+            number: 42,
+            url: 'https://github.com/acme/prtokens/pull/42',
+            headRefName: 'feature/prtokens',
+            authorLogin: 'pr-author',
+            currentUserLogin: 'runner-user',
+            repository: 'acme/prtokens',
+          },
+          commits: [commit({ authorLogin: 'pr-author' })],
+        }),
+      ),
+    });
+
+    await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
+
+    const markdown = deps.stdout.mock.calls[0]?.[0];
+    expect(markdown).toContain('<!-- prtokens:author:runner-user ');
+    expect(markdown).toContain('### @runner-user');
+    expect(markdown).not.toContain('<!-- prtokens:author:pr-author ');
+    expect(markdown).not.toContain('### @pr-author');
   });
 
   it('--json prints machine-readable payload and does not check gh or post', async () => {
@@ -216,6 +243,64 @@ describe('runCli', () => {
     await expect(runCli([], deps)).resolves.toBe(0);
 
     expect(deps.stdout).toHaveBeenCalledWith('rendered fallback');
+  });
+
+  it('passes existing comment body into post-mode rendering before patching', async () => {
+    const existingBody = renderPrComment({
+      currentAuthor: {
+        login: 'other-author',
+        totalCostUsd: 1,
+        inputTokens: 100_000,
+        outputTokens: 10_000,
+        cacheWriteTokens: 0,
+        cacheReadTokens: 0,
+        sessionCount: 1,
+        models: ['claude-sonnet-4-6'],
+        attributedPercent: 100,
+        lowConfidencePercent: 0,
+        rows: [
+          {
+            sha: 'abc9999',
+            message: 'other author work',
+            inputTokens: 100_000,
+            outputTokens: 10_000,
+            costUsd: 1,
+            sessionCount: 1,
+          },
+        ],
+      },
+    });
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue(
+        okPr({
+          pr: {
+            number: 42,
+            url: 'https://github.com/acme/prtokens/pull/42',
+            headRefName: 'feature/prtokens',
+            authorLogin: 'pr-author',
+            currentUserLogin: 'runner-user',
+            repository: 'acme/prtokens',
+          },
+        }),
+      ),
+      upsertPrComment: vi.fn().mockImplementation(async (input) => {
+        const markdown = input.renderMarkdown(existingBody);
+        expect(markdown).toContain('<!-- prtokens:author:other-author ');
+        expect(markdown).toContain('### @other-author');
+        expect(markdown).toContain('<!-- prtokens:author:runner-user ');
+        expect(markdown).toContain('### @runner-user');
+        return { ok: true };
+      }),
+    });
+
+    await expect(runCli([], deps)).resolves.toBe(0);
+
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
+    expect(deps.upsertPrComment.mock.calls[0]?.[0]).toMatchObject({
+      repository: 'acme/prtokens',
+      prNumber: 42,
+    });
+    expect(deps.upsertPrComment.mock.calls[0]?.[0].renderMarkdown).toEqual(expect.any(Function));
   });
 
   it('--verbose includes transcript diagnostics on stderr', async () => {

@@ -54,6 +54,32 @@ describe('resolvePullRequest', () => {
     expect(result.kind === 'ok' ? result.pr.number : undefined).toBe(12);
   });
 
+  it('includes the authenticated GitHub user login in PR info', async () => {
+    const runner = createRunner((command, args) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') {
+        return { stdout: JSON.stringify({ ...prJson, author: { login: 'pr-author' } }), stderr: '' };
+      }
+      if (command === 'gh' && args.join(' ') === 'api user --jq .login') return { stdout: 'runner-user\n', stderr: '' };
+      if (command === 'gh' && args.join(' ') === 'repo view --json nameWithOwner') {
+        return { stdout: JSON.stringify({ nameWithOwner: 'sam/prtokens' }), stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'log') {
+        return { stdout: 'def\u00002026-06-12T10:00:00Z\u0000feat\n', stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'show') return { stdout: 'diff for def', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable') return { stdout: 'patch-1 def\n', stderr: '' };
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result.kind).toBe('ok');
+    expect(result.kind === 'ok' ? result.pr.authorLogin : undefined).toBe('pr-author');
+    expect(result.kind === 'ok' ? result.pr.currentUserLogin : undefined).toBe('runner-user');
+  });
+
   it('returns no-pr without invoking gh when the current directory is not a git repository', async () => {
     const runner = createRunner((command, args) => {
       if (command === 'git' && args.join(' ') === 'branch --show-current') {

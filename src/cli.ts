@@ -72,14 +72,17 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     branch: resolvedPr.branch,
   });
   const priced = priceAttributionResult(attribution);
-  const markdown = renderPrComment({ currentAuthor: toRenderAuthorInput(priced, resolvedPr.pr.authorLogin) });
+  const currentAuthor = toRenderAuthorInput(priced, resolvedPr.pr.currentUserLogin ?? resolvedPr.pr.authorLogin);
+  const renderMarkdown = (existingBody?: string) => renderPrComment({ existingBody, currentAuthor });
 
   if (flags.dryRun) {
+    const markdown = renderMarkdown();
     cliDeps.stdout(markdown);
     return 0;
   }
 
   if (flags.json) {
+    const markdown = renderMarkdown();
     cliDeps.stdout(
       JSON.stringify({
         pr: resolvedPr.pr,
@@ -107,7 +110,7 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     runner: defaultCommandRunner,
     repository: resolvedPr.pr.repository,
     prNumber: resolvedPr.pr.number,
-    markdown,
+    renderMarkdown,
   });
   if (!postResult.ok) {
     cliDeps.stdout(postResult.renderedMarkdown);
