@@ -80,6 +80,35 @@ describe('resolvePullRequest', () => {
     expect(result.kind === 'ok' ? result.pr.currentUserLogin : undefined).toBe('runner-user');
   });
 
+  it('derives the posting repository from the PR url rather than gh repo view', async () => {
+    const forkPrJson = {
+      ...prJson,
+      number: 3,
+      url: 'https://github.com/SamuelZ12/TradingAgents/pull/3',
+    };
+    const runner = createRunner((command, args) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') return { stdout: JSON.stringify(forkPrJson), stderr: '' };
+      if (command === 'gh' && args.join(' ') === 'repo view --json nameWithOwner') {
+        // In a fork checkout gh resolves the upstream repo, not the fork the PR lives on.
+        return { stdout: JSON.stringify({ nameWithOwner: 'TauricResearch/TradingAgents' }), stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'log') {
+        return { stdout: 'def\u00002026-06-12T10:00:00Z\u0000feat\n', stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'show') return { stdout: 'diff for def', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable') return { stdout: 'patch-1 def\n', stderr: '' };
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result.kind).toBe('ok');
+    expect(result.kind === 'ok' ? result.pr.repository : undefined).toBe('SamuelZ12/TradingAgents');
+    expect(runner.commands.some((entry) => entry.command === 'gh' && entry.args[0] === 'repo')).toBe(false);
+  });
+
   it('returns no-pr without invoking gh when the current directory is not a git repository', async () => {
     const runner = createRunner((command, args) => {
       if (command === 'git' && args.join(' ') === 'branch --show-current') {

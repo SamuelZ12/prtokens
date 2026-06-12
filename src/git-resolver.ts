@@ -109,9 +109,7 @@ export async function resolvePullRequest(input: {
     throw error;
   }
 
-  const repository = JSON.parse((await runner.run('gh', ['repo', 'view', '--json', 'nameWithOwner'], { cwd })).stdout) as {
-    nameWithOwner: string;
-  };
+  const repository = repositoryFromPrUrl(pr.url);
   const currentUserLogin = (await readAuthenticatedUserLogin(runner, cwd)) ?? pr.author.login;
   const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName);
   const localCommitsByPatchId = new Map<string, LocalCommit>();
@@ -154,10 +152,27 @@ export async function resolvePullRequest(input: {
       headRefName: pr.headRefName,
       authorLogin: pr.author.login,
       currentUserLogin,
-      repository: repository.nameWithOwner,
+      repository,
     },
     commits,
   };
+}
+
+function repositoryFromPrUrl(prUrl: string): string {
+  let segments: string[];
+  try {
+    segments = new URL(prUrl).pathname.split('/').filter((segment) => segment !== '');
+  } catch {
+    segments = [];
+  }
+
+  // gh repo view follows gh's default-repo resolution, which can name a different
+  // repository than the PR itself in fork checkouts; the PR url is authoritative.
+  if (segments.length < 4 || segments[2] !== 'pull') {
+    throw new Error(`Cannot determine repository from pull request url: ${prUrl}`);
+  }
+
+  return `${segments[0]}/${segments[1]}`;
 }
 
 async function readAuthenticatedUserLogin(runner: CommandRunner, cwd: string | undefined): Promise<string | undefined> {
