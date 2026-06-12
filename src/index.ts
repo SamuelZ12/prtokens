@@ -1,4 +1,5 @@
-export { main } from './cli.js';
+export { main, runCli } from './cli.js';
+export type { CliDeps } from './cli.js';
 export { attributeUsageToCommits } from './attribution-engine.js';
 export { renderPrComment } from './comment-renderer.js';
 export type { RenderAuthorInput, RenderPrCommentInput } from './comment-renderer.js';
