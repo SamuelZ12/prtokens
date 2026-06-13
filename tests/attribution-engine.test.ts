@@ -261,6 +261,59 @@ describe('attributeUsageToCommits', () => {
     });
   });
 
+  it('preserves cache creation duration totals for pricing aggregates', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      events: [
+        usageEvent({
+          id: 'source-priced-event',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:30:00.000Z',
+          model: 'claude-sonnet-4-6',
+          cacheWriteTokens: 12,
+          cacheWrite5mTokens: 5,
+          cacheWrite1hTokens: 7,
+          sourceCostUsd: 1.5,
+        }),
+        usageEvent({
+          id: 'estimated-event',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:35:00.000Z',
+          model: 'claude-sonnet-4-6',
+          cacheWriteTokens: 6,
+          cacheWrite5mTokens: 2,
+          cacheWrite1hTokens: 4,
+        }),
+      ],
+    });
+
+    expect(result.buckets[1]).toMatchObject({
+      cacheWriteTokens: 18,
+      cacheWrite5mTokens: 7,
+      cacheWrite1hTokens: 11,
+      modelTokenTotals: {
+        'claude-sonnet-4-6': {
+          cacheWriteTokens: 18,
+          cacheWrite5mTokens: 7,
+          cacheWrite1hTokens: 11,
+        },
+      },
+      sourceCostTokenTotals: {
+        cacheWriteTokens: 12,
+        cacheWrite5mTokens: 5,
+        cacheWrite1hTokens: 7,
+      },
+      sourceCostModelTokenTotals: {
+        'claude-sonnet-4-6': {
+          cacheWriteTokens: 12,
+          cacheWrite5mTokens: 5,
+          cacheWrite1hTokens: 7,
+        },
+      },
+    });
+  });
+
   it('counts same raw session id from different agents as separate sessions', () => {
     const result = attributeUsageToCommits({
       branch: 'main',

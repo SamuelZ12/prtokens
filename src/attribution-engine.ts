@@ -170,6 +170,7 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
   bucket.inputTokens += event.inputTokens;
   bucket.outputTokens += event.outputTokens;
   bucket.cacheWriteTokens += event.cacheWriteTokens;
+  addCacheDurationTokens(bucket, event);
   bucket.cacheReadTokens += event.cacheReadTokens;
   bucket.eventCount += 1;
   bucket.lowConfidenceEventCount += lowConfidence ? 1 : 0;
@@ -184,6 +185,7 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
   modelTotals.inputTokens += event.inputTokens;
   modelTotals.outputTokens += event.outputTokens;
   modelTotals.cacheWriteTokens += event.cacheWriteTokens;
+  addCacheDurationTokens(modelTotals, event);
   modelTotals.cacheReadTokens += event.cacheReadTokens;
 
   if (event.sourceCostUsd !== undefined) {
@@ -197,6 +199,7 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
     sourceTotals.inputTokens += event.inputTokens;
     sourceTotals.outputTokens += event.outputTokens;
     sourceTotals.cacheWriteTokens += event.cacheWriteTokens;
+    addCacheDurationTokens(sourceTotals, event);
     sourceTotals.cacheReadTokens += event.cacheReadTokens;
 
     const sourceModelTotals = (bucket.sourceCostModelTokenTotals ??= {});
@@ -209,12 +212,25 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
     sourceModelTotal.inputTokens += event.inputTokens;
     sourceModelTotal.outputTokens += event.outputTokens;
     sourceModelTotal.cacheWriteTokens += event.cacheWriteTokens;
+    addCacheDurationTokens(sourceModelTotal, event);
     sourceModelTotal.cacheReadTokens += event.cacheReadTokens;
   }
 
   if (!bucket.modelNames.has(event.model)) {
     bucket.modelNames.add(event.model);
     bucket.models.push(event.model);
+  }
+}
+
+function addCacheDurationTokens(
+  total: Pick<AttributionBucket, 'cacheWrite5mTokens' | 'cacheWrite1hTokens'>,
+  event: Pick<UsageEvent, 'cacheWrite5mTokens' | 'cacheWrite1hTokens'>,
+): void {
+  if (event.cacheWrite5mTokens !== undefined) {
+    total.cacheWrite5mTokens = (total.cacheWrite5mTokens ?? 0) + event.cacheWrite5mTokens;
+  }
+  if (event.cacheWrite1hTokens !== undefined) {
+    total.cacheWrite1hTokens = (total.cacheWrite1hTokens ?? 0) + event.cacheWrite1hTokens;
   }
 }
 
