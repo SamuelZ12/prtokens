@@ -99,9 +99,9 @@ describe('OpenAI pricing coverage', () => {
   });
 
   it.each([
-    ['gpt-5.4', 'gpt-5.4-fast'],
-    ['gpt-5.5', 'gpt-5.5-fast'],
-  ])('prices %s and %s identically for every token bucket', (baseModel, aliasModel) => {
+    ['gpt-5.4', 'gpt-5.4-fast', 2],
+    ['gpt-5.5', 'gpt-5.5-fast', 2.5],
+  ])('prices %s as Codex Fast mode at the documented multiplier', (baseModel, aliasModel, multiplier) => {
     const tokenBuckets = [
       { inputTokens: 1_000_000, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 },
       { inputTokens: 0, outputTokens: 1_000_000, cacheWriteTokens: 0, cacheReadTokens: 0 },
@@ -115,7 +115,7 @@ describe('OpenAI pricing coverage', () => {
 
       expect(basePrice.warning).toBeUndefined();
       expect(aliasPrice.warning).toBeUndefined();
-      expect(aliasPrice.costUsd).toBe(basePrice.costUsd);
+      expect(aliasPrice.costUsd).toBe(basePrice.costUsd * multiplier);
     }
   });
 });

@@ -38,6 +38,11 @@ export type PricedAttributionResult = AttributionResult & {
 
 const pricing = loadPricing();
 
+const codexFastModeMultipliers: Record<string, number> = {
+  'gpt-5.4-fast': 2,
+  'gpt-5.5-fast': 2.5,
+};
+
 export function estimateUsageCost(event: UsageEvent): UsageCostEstimate {
   return estimateTokenCost(event.model, event);
 }
@@ -183,12 +188,15 @@ function estimateTokenCost(model: string, tokens: PriceableTokens): UsageCostEst
     };
   }
 
+  const multiplier = codexFastModeMultipliers[model] ?? 1;
+  const baseCostUsd =
+    (tokens.inputTokens / 1_000_000) * rates.inputUsdPerMillion +
+    (tokens.outputTokens / 1_000_000) * rates.outputUsdPerMillion +
+    (tokens.cacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion +
+    (tokens.cacheReadTokens / 1_000_000) * rates.cacheReadUsdPerMillion;
+
   return {
-    costUsd:
-      (tokens.inputTokens / 1_000_000) * rates.inputUsdPerMillion +
-      (tokens.outputTokens / 1_000_000) * rates.outputUsdPerMillion +
-      (tokens.cacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion +
-      (tokens.cacheReadTokens / 1_000_000) * rates.cacheReadUsdPerMillion,
+    costUsd: baseCostUsd * multiplier,
     pricedTokens,
     label: 'estimated at API rates',
   };
