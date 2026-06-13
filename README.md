@@ -32,7 +32,13 @@ Claude Code transcripts, Codex rollouts, and OpenCode databases never leave your
 
 ## Optional Global Pre-Push Hook
 
-To run `prtokens` after every `git push` on this machine, install a global `pre-push` hook:
+To run `prtokens` as a best-effort background task from `pre-push` on this machine, install a global `pre-push` hook. First check whether you already have a global hooks path:
+
+```sh
+git config --global --get core.hooksPath
+```
+
+If this prints a path, place or merge the `pre-push` hook in that existing directory instead of overwriting it. If it prints nothing, this example creates a global hooks directory and configures Git to use it:
 
 ```sh
 mkdir -p ~/.config/git/hooks
@@ -59,7 +65,7 @@ chmod +x ~/.config/git/hooks/pre-push
 git config --global core.hooksPath ~/.config/git/hooks
 ```
 
-Repositories with a local `core.hooksPath` bypass the global hook. `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
+The hook invokes `prtokens` directly, so `prtokens` must be available on `PATH` for Git hooks, such as through a global install or another wrapper command. Because this runs from `pre-push`, it may not observe newly pushed commits immediately, especially on first pushes or PR creation. Repositories with a local `core.hooksPath` bypass the global hook. `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
 
 ## Exit Behavior
 
