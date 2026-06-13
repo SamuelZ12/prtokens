@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0 - 2026-06-13
+
+### Added
+
+- Add `prtokens init` to install global pre-push hook integration.
+- Add Claude cache creation duration parsing, attribution, and pricing.
+
+### Changed
+
+- Include worktree roots when reading OpenCode usage.
+- Prefer source-reported usage costs when agents provide them.
+- Clarify estimated-cost wording in generated PR comments.
+
+### Fixed
+
+- Harden generated hook installation and execution around existing hooks, hook paths, stdin forwarding, recursion, and failure handling.
+- Price Codex fast-mode usage.
+- Keep pre-first-commit usage attribution separate from PR usage.
+- Simplify cache token comment display.
+- Preserve flat cache pricing and partial cache-duration coverage edge cases.
+
 ## 0.2.0 - 2026-06-12
 
 ### Added
