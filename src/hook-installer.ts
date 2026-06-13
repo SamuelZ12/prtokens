@@ -300,6 +300,9 @@ function renderManagedBlock(prtokensBinPath: string): string {
   return [
     managedStart,
     'prtokens_previous_status=$?',
+    'if [ "$prtokens_previous_status" -ne 0 ]; then',
+    '  exit "$prtokens_previous_status"',
+    'fi',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
     'stdin_file="$(mktemp)"',
     'cat > "$stdin_file"',
@@ -318,9 +321,6 @@ function renderManagedBlock(prtokensBinPath: string): string {
     'rm -f "$stdin_file"',
     `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
     '"$prtokens_bin" >/dev/null 2>&1 </dev/null &',
-    'if [ "$prtokens_previous_status" -ne 0 ]; then',
-    '  exit "$prtokens_previous_status"',
-    'fi',
     'exit 0',
     managedEnd,
   ].join('\n');

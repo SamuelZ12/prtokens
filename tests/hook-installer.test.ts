@@ -318,6 +318,13 @@ describe('installGlobalPrePushHook', () => {
     expect(content).toContain('# >>> prtokens >>>\nprtokens_previous_status=$?');
     expect(content).toContain('exit "$prtokens_previous_status"');
     expect(content).toContain('exit 0');
+    const previousStatusIndex = content.indexOf('prtokens_previous_status=$?');
+    const previousStatusExitIndex = content.indexOf('exit "$prtokens_previous_status"');
+    const stdinCaptureIndex = content.indexOf('stdin_file="$(mktemp)"');
+    const backgroundLaunchIndex = content.indexOf('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
+    expect(previousStatusIndex).toBeLessThan(stdinCaptureIndex);
+    expect(previousStatusExitIndex).toBeLessThan(stdinCaptureIndex);
+    expect(previousStatusExitIndex).toBeLessThan(backgroundLaunchIndex);
   });
 
   it('returns a failed result for an existing non-shell hook without modifying it', () => {
