@@ -115,6 +115,24 @@ describe('installGlobalPrePushHook', () => {
     expect(result.error).toContain('fatal: config file is locked');
   });
 
+  it('returns a failed result when reading core.hooksPath fails with detail', () => {
+    const { deps, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '', stderr: 'fatal: config error', status: 2 },
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain('core.hooksPath');
+    expect(result.error).toContain('fatal: config error');
+    expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
   it('respects an existing global core.hooksPath without changing git config', () => {
     const { deps, files, commands } = createDeps({
       commands: {
@@ -321,6 +339,36 @@ describe('runPreflight', () => {
         status: 'unknown',
         message: 'Skipped because GitHub CLI is not available.',
         hint: 'Install GitHub CLI, then run gh auth login.',
+      },
+    ]);
+  });
+
+  it('reports GitHub auth failure as failed when gh is installed', () => {
+    const { deps } = createDeps({
+      commands: {
+        'gh --version': { stdout: 'gh version 2.0.0\n', status: 0 },
+        'gh auth status': { stdout: '', stderr: 'not logged in\n', status: 1 },
+      },
+    });
+
+    const result = runPreflight(deps);
+
+    expect(result.checks).toEqual([
+      {
+        name: 'Node.js',
+        status: 'ok',
+        message: 'Node.js 22.13.0 satisfies the required 22.13.0.',
+      },
+      {
+        name: 'GitHub CLI',
+        status: 'ok',
+        message: 'GitHub CLI is installed.',
+      },
+      {
+        name: 'GitHub auth',
+        status: 'fail',
+        message: 'GitHub CLI is not authenticated.',
+        hint: 'Run gh auth login.',
       },
     ]);
   });

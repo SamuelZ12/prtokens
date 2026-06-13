@@ -142,7 +142,7 @@ export function runPreflight(deps: HookInstallerDeps): PreflightResult {
   } else {
     checks.push({
       name: 'GitHub auth',
-      status: 'warning',
+      status: 'fail',
       message: 'GitHub CLI is not authenticated.',
       hint: 'Run gh auth login.',
     });
@@ -154,6 +154,7 @@ export function runPreflight(deps: HookInstallerDeps): PreflightResult {
 export function installGlobalPrePushHook(deps: HookInstallerDeps, options: InstallOptions = {}): InstallResult {
   const dryRun = options.dryRun === true;
   const configuredHooksPath = deps.runCommand('git', ['config', '--global', '--path', '--get', 'core.hooksPath']);
+  const configuredHooksPathError = commandDetail(configuredHooksPath);
   const existingHooksDir = configuredHooksPath.status === 0 ? configuredHooksPath.stdout.trim() : '';
   const hasExistingHooksDir = existingHooksDir !== '';
   const hooksDir = hasExistingHooksDir ? existingHooksDir : join(deps.homedir(), '.config', 'git', 'hooks');
@@ -165,6 +166,18 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
     : dryRun
       ? 'would-set'
       : 'set';
+  if (configuredHooksPath.status !== 0 && configuredHooksPathError !== '') {
+    return {
+      ok: false,
+      dryRun,
+      hooksDir,
+      hookPath,
+      hookBody: '',
+      hookAction: 'installed',
+      coreHooksPathAction,
+      error: `Failed to read core.hooksPath: ${configuredHooksPathError}`,
+    };
+  }
   let currentHookBody: string | undefined;
   try {
     currentHookBody = deps.fs.existsSync(hookPath) ? deps.fs.readFileSync(hookPath) : undefined;
@@ -207,7 +220,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   if (!hasExistingHooksDir) {
     const configResult = deps.runCommand('git', ['config', '--global', 'core.hooksPath', hooksDir]);
     if (configResult.status !== 0) {
-      const detail = (configResult.stderr ?? configResult.stdout).trim() || configResult.stdout.trim();
+      const detail = commandDetail(configResult);
       return {
         ok: false,
         ...resultBase,
@@ -268,6 +281,10 @@ function runCommandSafely(deps: HookInstallerDeps, cmd: string, args: string[]):
   } catch {
     return { stdout: '', status: 1 };
   }
+}
+
+function commandDetail(result: CommandResult): string {
+  return (result.stderr ?? result.stdout).trim() || result.stdout.trim();
 }
 
 function compareVersions(left: string, right: string): number {
