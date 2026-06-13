@@ -232,6 +232,7 @@ describe('installGlobalPrePushHook', () => {
       hookPath: '/home/alice/.config/git/hooks/pre-push',
       error: 'permission denied',
     });
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
   });
 });
