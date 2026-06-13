@@ -9,6 +9,7 @@ import { renderPrComment } from '../src/comment-renderer.js';
 function usageEvent(overrides = {}) {
   return {
     id: 'event-1',
+    agent: 'claude-code',
     timestamp: '2024-01-01T00:00:00.000Z',
     model: 'claude-3-5-sonnet-20241022',
     inputTokens: 1_000,

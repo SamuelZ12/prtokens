@@ -9,6 +9,7 @@ const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 function usageEvent(overrides: Partial<UsageEvent> = {}): UsageEvent {
   return {
     id: 'event-1',
+    agent: 'claude-code',
     timestamp: '2026-06-12T09:30:00.000Z',
     model: 'claude-sonnet-4-6',
     inputTokens: 1_000_000,

@@ -38,6 +38,7 @@ describe('readClaudeTranscripts', () => {
 
     expect(result.events).toHaveLength(2);
     expect(result.events[0]).toMatchObject({
+      agent: 'claude-code',
       inputTokens: 100,
       outputTokens: 10,
       cacheWriteTokens: 5,
