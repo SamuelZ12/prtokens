@@ -78,6 +78,10 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('stdin_file="$(mktemp)"');
     expect(hookContent).toContain('cat > "$stdin_file"');
     expect(hookContent).toContain('git rev-parse --absolute-git-dir');
+    expect(hookContent).toContain('current_hook="$0"');
+    expect(hookContent).toContain('repo_hook_path="$repo_hook"');
+    expect(hookContent).toContain('realpath "$repo_hook"');
+    expect(hookContent).toContain('[ "$repo_hook_path" != "$current_hook" ]');
     expect(hookContent).toContain('"$repo_hook" "$@" < "$stdin_file"');
     expect(hookContent).toContain('exit "$status"');
     expect(hookContent).toContain('rm -f "$stdin_file"');
