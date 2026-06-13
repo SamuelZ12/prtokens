@@ -158,8 +158,6 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   const hasExistingHooksDir = existingHooksDir !== '';
   const hooksDir = hasExistingHooksDir ? existingHooksDir : join(deps.homedir(), '.config', 'git', 'hooks');
   const hookPath = join(hooksDir, 'pre-push');
-  const currentHookBody = deps.fs.existsSync(hookPath) ? deps.fs.readFileSync(hookPath) : undefined;
-  const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
   const coreHooksPathAction: CoreHooksPathAction = hasExistingHooksDir
     ? dryRun
       ? 'would-respect'
@@ -167,6 +165,22 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
     : dryRun
       ? 'would-set'
       : 'set';
+  let currentHookBody: string | undefined;
+  try {
+    currentHookBody = deps.fs.existsSync(hookPath) ? deps.fs.readFileSync(hookPath) : undefined;
+  } catch (error) {
+    return {
+      ok: false,
+      dryRun,
+      hooksDir,
+      hookPath,
+      hookBody: '',
+      hookAction: 'installed',
+      coreHooksPathAction,
+      error: errorMessage(error),
+    };
+  }
+  const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
   const resultBase = {
     dryRun,
     hooksDir,

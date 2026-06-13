@@ -248,6 +248,32 @@ describe('installGlobalPrePushHook', () => {
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
+  it('returns a failed result when an existing hook cannot be read', () => {
+    const hookPath = '/custom/hooks/pre-push';
+    const { deps, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        [hookPath]: '',
+      },
+    });
+    vi.mocked(deps.fs.readFileSync).mockImplementation(() => {
+      throw new Error('read denied');
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({
+      ok: false,
+      hookPath,
+      error: 'read denied',
+    });
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
   it('returns a failed result when the hook cannot be written', () => {
     const hooksDir = '/home/alice/.config/git/hooks';
     const { deps, commands } = createDeps({
