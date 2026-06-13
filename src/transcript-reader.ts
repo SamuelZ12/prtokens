@@ -223,6 +223,12 @@ function createUsageCandidate(
       inputTokens: tokenTotals.inputTokens,
       outputTokens: tokenTotals.outputTokens,
       cacheWriteTokens: tokenTotals.cacheWriteTokens,
+      ...(tokenTotals.cacheWrite5mTokens === undefined
+        ? {}
+        : { cacheWrite5mTokens: tokenTotals.cacheWrite5mTokens }),
+      ...(tokenTotals.cacheWrite1hTokens === undefined
+        ? {}
+        : { cacheWrite1hTokens: tokenTotals.cacheWrite1hTokens }),
       cacheReadTokens: tokenTotals.cacheReadTokens,
       sessionId: context.sessionId ?? '',
       ...(sourceCostUsd === undefined ? {} : { sourceCostUsd }),
@@ -255,12 +261,20 @@ function mapUsage(
 ): Omit<UsageEvent, 'id' | 'agent' | 'timestamp' | 'model' | 'sessionId' | 'gitBranch'> | undefined {
   const inputTokens = getNumber(usage.input_tokens) ?? 0;
   const outputTokens = getNumber(usage.output_tokens) ?? 0;
-  const cacheWriteTokens = getNumber(usage.cache_creation_input_tokens) ?? 0;
+  const cacheCreation = getObject(usage.cache_creation);
+  const cacheWrite5mTokens = getNumber(cacheCreation?.ephemeral_5m_input_tokens) ?? 0;
+  const cacheWrite1hTokens = getNumber(cacheCreation?.ephemeral_1h_input_tokens) ?? 0;
+  const cacheWriteTokens =
+    cacheCreation === undefined
+      ? (getNumber(usage.cache_creation_input_tokens) ?? 0)
+      : cacheWrite5mTokens + cacheWrite1hTokens;
   const cacheReadTokens = getNumber(usage.cache_read_input_tokens) ?? 0;
   const hasUsableValue = [
     usage.input_tokens,
     usage.output_tokens,
     usage.cache_creation_input_tokens,
+    cacheCreation?.ephemeral_5m_input_tokens,
+    cacheCreation?.ephemeral_1h_input_tokens,
     usage.cache_read_input_tokens,
   ].some((value) => getNumber(value) !== undefined);
 
@@ -268,7 +282,13 @@ function mapUsage(
     return undefined;
   }
 
-  return { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens };
+  return {
+    inputTokens,
+    outputTokens,
+    cacheWriteTokens,
+    ...(cacheCreation === undefined ? {} : { cacheWrite5mTokens, cacheWrite1hTokens }),
+    cacheReadTokens,
+  };
 }
 
 function matchesRepoWhenPresent(line: JsonObject, repoRoot: string): boolean {

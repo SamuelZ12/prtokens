@@ -8,6 +8,8 @@ export interface UsageEvent {
   inputTokens: number;
   outputTokens: number;
   cacheWriteTokens: number;
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   cacheReadTokens: number;
   sessionId: string;
   sourceCostUsd?: number;
@@ -26,6 +28,8 @@ export interface TokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheWriteTokens: number;
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   cacheReadTokens: number;
   sessionCount: number;
 }

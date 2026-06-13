@@ -55,6 +55,52 @@ describe('readClaudeTranscripts', () => {
     expect(result.diagnostics.dedupedEventCount).toBe(1);
   });
 
+  it('reads Claude cache creation duration tokens when present', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
+    const normalizedRepo = repoRoot.replaceAll('/', '-');
+    const projectDir = join(homeDir, '.claude', 'projects', normalizedRepo);
+    await mkdir(projectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'session.jsonl'),
+      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":999,"cache_creation":{"ephemeral_5m_input_tokens":7,"ephemeral_1h_input_tokens":11},"cache_read_input_tokens":20}},"gitBranch":"feature"}',
+    );
+
+    const result = await readClaudeTranscripts({ repoRoot, homeDir });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      cacheWriteTokens: 18,
+      cacheWrite5mTokens: 7,
+      cacheWrite1hTokens: 11,
+      cacheReadTokens: 20,
+    });
+  });
+
+  it('keeps flat Claude cache creation tokens when no duration breakdown exists', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
+    const normalizedRepo = repoRoot.replaceAll('/', '-');
+    const projectDir = join(homeDir, '.claude', 'projects', normalizedRepo);
+    await mkdir(projectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'session.jsonl'),
+      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":13,"cache_read_input_tokens":20}},"gitBranch":"feature"}',
+    );
+
+    const result = await readClaudeTranscripts({ repoRoot, homeDir });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      cacheWriteTokens: 13,
+      cacheReadTokens: 20,
+    });
+    expect(result.events[0].cacheWrite5mTokens).toBeUndefined();
+    expect(result.events[0].cacheWrite1hTokens).toBeUndefined();
+  });
+
   it('falls back to all project transcripts and requires explicit matching repo metadata', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
