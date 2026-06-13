@@ -17,19 +17,11 @@ const FALLBACK_RATES = {
     cacheWriteUsdPerMillion: 12.5,
     cacheReadUsdPerMillion: 1,
   },
-  // OpenCode emits these aliases; rates mirror the fetched LiteLLM gpt-5.4/gpt-5.5 base entries.
-  'gpt-5.4-fast': {
-    inputUsdPerMillion: 2.5,
-    outputUsdPerMillion: 15,
-    cacheWriteUsdPerMillion: 0,
-    cacheReadUsdPerMillion: 0.25,
-  },
-  'gpt-5.5-fast': {
-    inputUsdPerMillion: 5,
-    outputUsdPerMillion: 30,
-    cacheWriteUsdPerMillion: 0,
-    cacheReadUsdPerMillion: 0.5,
-  },
+};
+
+const DERIVED_ALIASES = {
+  'gpt-5.4-fast': 'gpt-5.4',
+  'gpt-5.5-fast': 'gpt-5.5',
 };
 
 const response = await fetch(SOURCE_URL);
@@ -61,6 +53,12 @@ for (const [model, entry] of Object.entries(source)) {
 
 for (const [model, rates] of Object.entries(FALLBACK_RATES)) {
   snapshot[model] ??= rates;
+}
+
+for (const [alias, baseModel] of Object.entries(DERIVED_ALIASES)) {
+  if (snapshot[alias] === undefined && snapshot[baseModel] !== undefined) {
+    snapshot[alias] = { ...snapshot[baseModel] };
+  }
 }
 
 const sorted = Object.fromEntries(
