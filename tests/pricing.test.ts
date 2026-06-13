@@ -82,6 +82,22 @@ describe('estimateUsageCost', () => {
     });
   });
 
+  it('prices flat cache creation remainder when duration coverage is partial', () => {
+    const price = estimateUsageCost(
+      usageEvent({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheWriteTokens: 3_000_000,
+        cacheWrite5mTokens: 1_000_000,
+        cacheWrite1hTokens: 1_000_000,
+        cacheReadTokens: 0,
+      }),
+    );
+
+    expect(price.costUsd).toBeCloseTo(13.5, 10);
+    expect(price.warning).toBeUndefined();
+  });
+
   it('keeps flat cache creation pricing when no duration breakdown exists', () => {
     const price = estimateUsageCost(
       usageEvent({ inputTokens: 0, outputTokens: 0, cacheWriteTokens: 2_000_000, cacheReadTokens: 0 }),
@@ -413,6 +429,63 @@ describe('priceAttributionResult', () => {
     expect(priced.buckets[0].costUsd).toBeCloseTo(5.75, 10);
     expect(priced.buckets[0].warning).toBeUndefined();
     expect(priced.totalCostUsd).toBeCloseTo(5.75, 10);
+  });
+
+  it('subtracts source-priced cache durations from mixed-model token totals', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheWriteTokens: 2_000_000,
+            cacheWrite5mTokens: 1_000_000,
+            cacheWrite1hTokens: 1_000_000,
+            cacheReadTokens: 0,
+            models: ['claude-sonnet-4-6', 'gpt-5'],
+            modelTokenTotals: {
+              'claude-sonnet-4-6': {
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheWriteTokens: 2_000_000,
+                cacheWrite5mTokens: 1_000_000,
+                cacheWrite1hTokens: 1_000_000,
+                cacheReadTokens: 0,
+              },
+              'gpt-5': {
+                inputTokens: 1_000_000,
+                outputTokens: 0,
+                cacheWriteTokens: 0,
+                cacheReadTokens: 0,
+              },
+            },
+            sourceCostUsd: 2,
+            sourceCostTokenTotals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheWriteTokens: 1_000_000,
+              cacheWrite5mTokens: 250_000,
+              cacheWrite1hTokens: 750_000,
+              cacheReadTokens: 0,
+            },
+            sourceCostModelTokenTotals: {
+              'claude-sonnet-4-6': {
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheWriteTokens: 1_000_000,
+                cacheWrite5mTokens: 250_000,
+                cacheWrite1hTokens: 750_000,
+                cacheReadTokens: 0,
+              },
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBeCloseTo(7.5625, 10);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.totalCostUsd).toBeCloseTo(7.5625, 10);
   });
 
   it('deduplicates aggregate warnings', () => {

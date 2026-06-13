@@ -304,8 +304,13 @@ function cacheWriteCostUsd(tokens: PriceableTokens, rates: PricingRates): number
     return (tokens.cacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion;
   }
 
+  const cacheWrite5mTokens = tokens.cacheWrite5mTokens ?? 0;
+  const cacheWrite1hTokens = tokens.cacheWrite1hTokens ?? 0;
+  const flatCacheWriteTokens = Math.max(0, tokens.cacheWriteTokens - cacheWrite5mTokens - cacheWrite1hTokens);
+
   return (
-    ((tokens.cacheWrite5mTokens ?? 0) / 1_000_000) * rates.cacheWriteUsdPerMillion +
-    ((tokens.cacheWrite1hTokens ?? 0) / 1_000_000) * rates.inputUsdPerMillion * 2
+    (cacheWrite5mTokens / 1_000_000) * rates.cacheWriteUsdPerMillion +
+    (cacheWrite1hTokens / 1_000_000) * rates.inputUsdPerMillion * 2 +
+    (flatCacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion
   );
 }
