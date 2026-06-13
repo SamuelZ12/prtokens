@@ -334,7 +334,7 @@ function terminalLastCommand(hookBody: string): 'exit' | 'exec' | undefined {
     return undefined;
   }
 
-  const match = /(?:^|(?:;|&&|\|\||\|)\s*)(exit|exec)(?=$|\s|;|&&|\|\||\|)/.exec(lastMeaningfulLine);
+  const match = /(?:^|(?:;|&&|&|\|\||\|)\s*)(exit|exec)(?=$|\s|;|&&|&|\|\||\|)/.exec(lastMeaningfulLine);
 
   return match?.[1] as 'exit' | 'exec' | undefined;
 }
