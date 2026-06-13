@@ -63,10 +63,12 @@ export function createDefaultHookInstallerDeps(prtokensBinPath: string): HookIns
   return {
     runCommand(cmd, args) {
       const result = spawnSync(cmd, args, { encoding: 'utf8', env: process.env });
+      const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+      const spawnError = result.error instanceof Error ? result.error.message : '';
 
       return {
         stdout: typeof result.stdout === 'string' ? result.stdout : '',
-        stderr: typeof result.stderr === 'string' ? result.stderr : '',
+        stderr: spawnError === '' ? stderr : `${stderr}${stderr === '' ? '' : '\n'}${spawnError}`,
         status: result.status ?? 1,
       };
     },
@@ -153,7 +155,7 @@ export function runPreflight(deps: HookInstallerDeps): PreflightResult {
 
 export function installGlobalPrePushHook(deps: HookInstallerDeps, options: InstallOptions = {}): InstallResult {
   const dryRun = options.dryRun === true;
-  const configuredHooksPath = deps.runCommand('git', ['config', '--global', '--path', '--get', 'core.hooksPath']);
+  const configuredHooksPath = runCommandSafely(deps, 'git', ['config', '--global', '--path', '--get', 'core.hooksPath']);
   const configuredHooksPathError = commandDetail(configuredHooksPath);
   const existingHooksDir = configuredHooksPath.status === 0 ? configuredHooksPath.stdout.trim() : '';
   const hasExistingHooksDir = existingHooksDir !== '';
@@ -218,7 +220,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   }
 
   if (!hasExistingHooksDir) {
-    const configResult = deps.runCommand('git', ['config', '--global', 'core.hooksPath', hooksDir]);
+    const configResult = runCommandSafely(deps, 'git', ['config', '--global', 'core.hooksPath', hooksDir]);
     if (configResult.status !== 0) {
       const detail = commandDetail(configResult);
       return {
@@ -278,8 +280,8 @@ function renderManagedBlock(prtokensBinPath: string): string {
 function runCommandSafely(deps: HookInstallerDeps, cmd: string, args: string[]): CommandResult {
   try {
     return deps.runCommand(cmd, args);
-  } catch {
-    return { stdout: '', status: 1 };
+  } catch (error) {
+    return { stdout: '', stderr: errorMessage(error), status: 1 };
   }
 }
 

@@ -1,6 +1,12 @@
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { installGlobalPrePushHook, runPreflight, type CommandResult, type HookInstallerDeps } from '../src/hook-installer.js';
+import {
+  createDefaultHookInstallerDeps,
+  installGlobalPrePushHook,
+  runPreflight,
+  type CommandResult,
+  type HookInstallerDeps,
+} from '../src/hook-installer.js';
 
 type CommandCall = { cmd: string; args: string[] };
 
@@ -131,6 +137,47 @@ describe('installGlobalPrePushHook', () => {
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
+  it('returns a failed result when reading core.hooksPath throws', () => {
+    const { deps } = createDeps();
+    vi.mocked(deps.runCommand).mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.join(' ') === 'config --global --path --get core.hooksPath') {
+        throw new Error('config read exploded');
+      }
+
+      return { stdout: '', status: 1 };
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain('core.hooksPath');
+    expect(result.error).toContain('config read exploded');
+    expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+  });
+
+  it('returns a failed result when setting core.hooksPath throws', () => {
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const { deps } = createDeps();
+    vi.mocked(deps.runCommand).mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.join(' ') === 'config --global --path --get core.hooksPath') {
+        return { stdout: '', status: 1 };
+      }
+      if (cmd === 'git' && args.join(' ') === `config --global core.hooksPath ${hooksDir}`) {
+        throw new Error('config set exploded');
+      }
+
+      return { stdout: '', status: 1 };
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false, hookPath: `${hooksDir}/pre-push`, coreHooksPathAction: 'set' });
+    expect(result.error).toContain('core.hooksPath');
+    expect(result.error).toContain('config set exploded');
   });
 
   it('respects an existing global core.hooksPath without changing git config', () => {
@@ -371,5 +418,16 @@ describe('runPreflight', () => {
         hint: 'Run gh auth login.',
       },
     ]);
+  });
+});
+
+describe('createDefaultHookInstallerDeps', () => {
+  it('preserves spawn execution errors in stderr', () => {
+    const deps = createDefaultHookInstallerDeps('/usr/local/bin/prtokens');
+
+    const result = deps.runCommand('__prtokens_missing_command__', []);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr?.trim()).not.toBe('');
   });
 });
