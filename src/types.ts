@@ -1,5 +1,8 @@
+export type AgentName = 'claude-code' | 'codex' | 'opencode';
+
 export interface UsageEvent {
   id: string;
+  agent: AgentName;
   timestamp: string;
   model: string;
   inputTokens: number;

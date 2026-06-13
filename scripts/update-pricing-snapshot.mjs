@@ -19,6 +19,11 @@ const FALLBACK_RATES = {
   },
 };
 
+const DERIVED_ALIASES = {
+  'gpt-5.4-fast': 'gpt-5.4',
+  'gpt-5.5-fast': 'gpt-5.5',
+};
+
 const response = await fetch(SOURCE_URL);
 if (!response.ok) {
   throw new Error(`Failed to fetch LiteLLM pricing: ${response.status} ${response.statusText}`);
@@ -27,7 +32,7 @@ const source = await response.json();
 
 const snapshot = {};
 for (const [model, entry] of Object.entries(source)) {
-  if (!model.toLowerCase().includes('claude')) {
+  if (!shouldIncludeModel(model)) {
     continue;
   }
 
@@ -37,17 +42,23 @@ for (const [model, entry] of Object.entries(source)) {
     continue;
   }
 
+  const isClaude = model.toLowerCase().includes('claude');
   snapshot[model] = {
     inputUsdPerMillion,
     outputUsdPerMillion,
-    // Anthropic's standard cache multipliers (1.25x write, 0.1x read) when LiteLLM omits them.
-    cacheWriteUsdPerMillion: perMillion(entry.cache_creation_input_token_cost) ?? round(inputUsdPerMillion * 1.25),
-    cacheReadUsdPerMillion: perMillion(entry.cache_read_input_token_cost) ?? round(inputUsdPerMillion * 0.1),
+    cacheWriteUsdPerMillion: perMillion(entry.cache_creation_input_token_cost) ?? (isClaude ? round(inputUsdPerMillion * 1.25) : 0),
+    cacheReadUsdPerMillion: perMillion(entry.cache_read_input_token_cost) ?? (isClaude ? round(inputUsdPerMillion * 0.1) : 0),
   };
 }
 
 for (const [model, rates] of Object.entries(FALLBACK_RATES)) {
   snapshot[model] ??= rates;
+}
+
+for (const [alias, baseModel] of Object.entries(DERIVED_ALIASES)) {
+  if (snapshot[alias] === undefined && snapshot[baseModel] !== undefined) {
+    snapshot[alias] = { ...snapshot[baseModel] };
+  }
 }
 
 const sorted = Object.fromEntries(
@@ -56,6 +67,19 @@ const sorted = Object.fromEntries(
 
 writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(sorted, null, 2)}\n`);
 console.log(`Wrote ${Object.keys(sorted).length} models to ${SNAPSHOT_PATH}`);
+
+function shouldIncludeModel(model) {
+  const normalized = model.toLowerCase();
+  if (normalized.includes('claude')) return true;
+  if (!normalized.startsWith('gpt-5')) return false;
+  return (
+    normalized.includes('codex') ||
+    normalized.includes('fast') ||
+    normalized.includes('mini') ||
+    normalized.includes('nano') ||
+    /^gpt-5(\.\d+)?$/.test(normalized)
+  );
+}
 
 function perMillion(costPerToken) {
   if (typeof costPerToken !== 'number' || !Number.isFinite(costPerToken)) {

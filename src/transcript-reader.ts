@@ -215,6 +215,7 @@ function createUsageCandidate(
     dedupeKey,
     event: {
       id: `claude-transcript:${dedupeKey}`,
+      agent: 'claude-code',
       timestamp: context.timestamp ?? '',
       model: context.model ?? '',
       inputTokens: tokenTotals.inputTokens,
@@ -246,7 +247,9 @@ function getStableIdentity(source: JsonObject): string | undefined {
   return messageId && requestId ? `${messageId}:${requestId}` : undefined;
 }
 
-function mapUsage(usage: JsonObject): Omit<UsageEvent, 'id' | 'timestamp' | 'model' | 'sessionId' | 'gitBranch'> | undefined {
+function mapUsage(
+  usage: JsonObject,
+): Omit<UsageEvent, 'id' | 'agent' | 'timestamp' | 'model' | 'sessionId' | 'gitBranch'> | undefined {
   const inputTokens = getNumber(usage.input_tokens) ?? 0;
   const outputTokens = getNumber(usage.output_tokens) ?? 0;
   const cacheWriteTokens = getNumber(usage.cache_creation_input_tokens) ?? 0;

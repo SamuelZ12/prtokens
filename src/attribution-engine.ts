@@ -127,7 +127,7 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
   bucket.cacheReadTokens += event.cacheReadTokens;
   bucket.eventCount += 1;
   bucket.lowConfidenceEventCount += lowConfidence ? 1 : 0;
-  bucket.sessionIds.add(event.sessionId);
+  bucket.sessionIds.add(`${event.agent}:${event.sessionId}`);
   bucket.sessionCount = bucket.sessionIds.size;
   const modelTotals = (bucket.modelTokenTotals[event.model] ??= {
     inputTokens: 0,

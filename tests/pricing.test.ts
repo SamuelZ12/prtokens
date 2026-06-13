@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { estimateUsageCost, priceAttributionResult } from '../src/pricing.js';
@@ -9,6 +12,7 @@ const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 function usageEvent(overrides: Partial<UsageEvent> = {}): UsageEvent {
   return {
     id: 'event-1',
+    agent: 'claude-code',
     timestamp: '2026-06-12T09:30:00.000Z',
     model: 'claude-sonnet-4-6',
     inputTokens: 1_000_000,
@@ -63,6 +67,112 @@ describe('bundled pricing coverage', () => {
 
     expect(price.warning).toBeUndefined();
     expect(price.costUsd).toBe(usdPerMillion);
+  });
+});
+
+describe('OpenAI pricing coverage', () => {
+  it.each(['gpt-5.4', 'gpt-5.5', 'gpt-5.4-fast', 'gpt-5.5-fast'])(
+    'prices %s from the bundled snapshot',
+    (model) => {
+      const price = estimateUsageCost(
+        usageEvent({
+          model,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheWriteTokens: 1_000_000,
+          cacheReadTokens: 1_000_000,
+        }),
+      );
+
+      expect(price.warning).toBeUndefined();
+      expect(price.costUsd).toBeGreaterThan(0);
+    },
+  );
+
+  it('does not charge OpenAI cache writes when LiteLLM omits a cache write rate', () => {
+    const withCacheWrites = estimateUsageCost(
+      usageEvent({ model: 'gpt-5.5', inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000, cacheReadTokens: 0 }),
+    );
+
+    expect(withCacheWrites.warning).toBeUndefined();
+    expect(withCacheWrites.costUsd).toBe(0);
+  });
+
+  it.each([
+    ['gpt-5.4', 'gpt-5.4-fast'],
+    ['gpt-5.5', 'gpt-5.5-fast'],
+  ])('prices %s and %s identically for every token bucket', (baseModel, aliasModel) => {
+    const tokenBuckets = [
+      { inputTokens: 1_000_000, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 1_000_000, cacheWriteTokens: 0, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 1_000_000 },
+    ];
+
+    for (const bucket of tokenBuckets) {
+      const basePrice = estimateUsageCost(usageEvent({ model: baseModel, ...bucket }));
+      const aliasPrice = estimateUsageCost(usageEvent({ model: aliasModel, ...bucket }));
+
+      expect(basePrice.warning).toBeUndefined();
+      expect(aliasPrice.warning).toBeUndefined();
+      expect(aliasPrice.costUsd).toBe(basePrice.costUsd);
+    }
+  });
+});
+
+describe('pricing snapshot updater', () => {
+  it('derives OpenAI fast aliases from fetched base model rates', () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'prtokens-pricing-'));
+    const tempScriptsDir = join(tempRoot, 'scripts');
+    const tempPricingDir = join(tempRoot, 'src', 'pricing');
+    mkdirSync(tempScriptsDir, { recursive: true });
+    mkdirSync(tempPricingDir, { recursive: true });
+
+    const scriptPath = join(tempScriptsDir, 'update-pricing-snapshot.mjs');
+    const preloaderPath = join(tempRoot, 'mock-fetch.mjs');
+    const snapshotPath = join(tempPricingDir, 'litellm-snapshot.json');
+
+    copyFileSync(join(projectRoot, 'scripts', 'update-pricing-snapshot.mjs'), scriptPath);
+    writeFileSync(
+      preloaderPath,
+      `globalThis.fetch = async () => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          'gpt-5.4': {
+            input_cost_per_token: 0.000009,
+            output_cost_per_token: 0.00008,
+            cache_creation_input_token_cost: 0.000001,
+            cache_read_input_token_cost: 0.0000009,
+          },
+          'gpt-5.5': {
+            input_cost_per_token: 0.000011,
+            output_cost_per_token: 0.00009,
+            cache_read_input_token_cost: 0.0000011,
+          },
+        }),
+      });\n`,
+    );
+
+    execFileSync(process.execPath, ['--import', preloaderPath, scriptPath], { cwd: tempRoot, stdio: 'pipe' });
+
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Record<string, unknown>;
+
+    expect(snapshot['gpt-5.4-fast']).toEqual(snapshot['gpt-5.4']);
+    expect(snapshot['gpt-5.5-fast']).toEqual(snapshot['gpt-5.5']);
+    expect(snapshot['gpt-5.4-fast']).toEqual({
+      inputUsdPerMillion: 9,
+      outputUsdPerMillion: 80,
+      cacheWriteUsdPerMillion: 1,
+      cacheReadUsdPerMillion: 0.9,
+    });
+    expect(snapshot['gpt-5.5-fast']).toEqual({
+      inputUsdPerMillion: 11,
+      outputUsdPerMillion: 90,
+      cacheWriteUsdPerMillion: 0,
+      cacheReadUsdPerMillion: 1.1,
+    });
   });
 });
 

@@ -9,6 +9,7 @@ import { renderPrComment } from '../src/comment-renderer.js';
 function usageEvent(overrides = {}) {
   return {
     id: 'event-1',
+    agent: 'claude-code',
     timestamp: '2024-01-01T00:00:00.000Z',
     model: 'claude-3-5-sonnet-20241022',
     inputTokens: 1_000,
@@ -48,17 +49,32 @@ function okPr(overrides = {}) {
   };
 }
 
+function diagnostics(overrides = {}) {
+  return {
+    scannedFileCount: 0,
+    malformedLineCount: 0,
+    dedupedEventCount: 0,
+    skippedLineCount: 0,
+    warningMessages: [],
+    ...overrides,
+  };
+}
+
+function allUsage(overrides = {}) {
+  return {
+    events: [usageEvent()],
+    diagnostics: {
+      'claude-code': diagnostics({ scannedFileCount: 1 }),
+      codex: diagnostics(),
+      opencode: diagnostics(),
+    },
+    ...overrides,
+  };
+}
+
 function createDeps(overrides = {}) {
   return {
-    readClaudeTranscripts: vi.fn().mockResolvedValue({
-      events: [usageEvent()],
-      diagnostics: {
-        scannedFileCount: 1,
-        malformedLineCount: 0,
-        dedupedEventCount: 0,
-        skippedLineCount: 0,
-      },
-    }),
+    readAllUsage: vi.fn().mockResolvedValue(allUsage()),
     resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
     upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
@@ -112,16 +128,40 @@ describe('runCli', () => {
     expect(markdown).not.toContain('### @pr-author');
   });
 
-  it('--json prints machine-readable payload and does not check gh or post', async () => {
-    const deps = createDeps();
+  it('--json prints machine-readable payload with per-agent totals and markdown', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
+        events: [
+          usageEvent({ model: 'vercel_ai_gateway/anthropic/claude-3-5-sonnet-20241022' }),
+          usageEvent({
+            id: 'event-2',
+            agent: 'codex',
+            model: 'codex-mini-latest',
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 0,
+            sessionId: 'session-2',
+          }),
+        ],
+        diagnostics: {
+          'claude-code': diagnostics({ scannedFileCount: 1 }),
+          codex: diagnostics({ scannedFileCount: 1 }),
+          opencode: diagnostics(),
+        },
+      })),
+    });
 
     await expect(runCli(['--json'], deps)).resolves.toBe(0);
 
     expect(deps.stdout).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(deps.stdout.mock.calls[0]?.[0]);
-    expect(Object.keys(payload).sort()).toEqual(['attribution', 'diagnostics', 'markdown', 'pr', 'pricing'].sort());
+    expect(Object.keys(payload).sort()).toEqual(['agentTotals', 'attribution', 'diagnostics', 'markdown', 'pr', 'pricing'].sort());
     expect(payload.pr.number).toBe(42);
+    expect(payload.agentTotals.map((agent) => agent.agent)).toEqual(['claude-code', 'codex']);
+    expect(payload.diagnostics.codex.scannedFileCount).toBe(1);
     expect(payload.markdown).toContain('<!-- prtokens:v1 -->');
+    expect(payload.markdown).toContain('Agents:');
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -138,7 +178,7 @@ describe('runCli', () => {
     await expect(runCli([], deps)).resolves.toBe(0);
 
     expect(deps.stdout).toHaveBeenCalledWith('No pull request found for current branch.');
-    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -151,7 +191,7 @@ describe('runCli', () => {
     await expect(runCli([], deps)).resolves.toBe(1);
 
     expect(deps.stderr).toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
-    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -164,7 +204,7 @@ describe('runCli', () => {
     await expect(runCli([], deps)).resolves.toBe(1);
 
     expect(deps.stderr).toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
-    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -177,51 +217,42 @@ describe('runCli', () => {
     await expect(runCli([], deps)).rejects.toThrow('git failed unexpectedly');
 
     expect(deps.stderr).not.toHaveBeenCalledWith('Install GitHub CLI and run gh auth login.');
-    expect(deps.readClaudeTranscripts).not.toHaveBeenCalled();
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 
-  it('prints friendly message and exits successfully when no transcripts exist', async () => {
+  it('prints friendly message and exits successfully when no usage exists', async () => {
     const deps = createDeps({
-      readClaudeTranscripts: vi.fn().mockResolvedValue({
-        events: [],
-        diagnostics: {
-          scannedFileCount: 0,
-          malformedLineCount: 0,
-          dedupedEventCount: 0,
-          skippedLineCount: 0,
-        },
-      }),
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({ events: [] })),
     });
 
     await expect(runCli([], deps)).resolves.toBe(0);
 
-    expect(deps.stdout).toHaveBeenCalledWith('No Claude Code transcripts found for this repo.');
+    expect(deps.stdout).toHaveBeenCalledWith('No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).');
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 
-  it('--verbose prints diagnostics when no transcripts exist', async () => {
+  it('--verbose prints diagnostics when no usage exists', async () => {
     const deps = createDeps({
-      readClaudeTranscripts: vi.fn().mockResolvedValue({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
         events: [],
         diagnostics: {
-          scannedFileCount: 7,
-          malformedLineCount: 2,
-          dedupedEventCount: 4,
-          skippedLineCount: 3,
+          'claude-code': diagnostics({ scannedFileCount: 7, malformedLineCount: 2, dedupedEventCount: 4, skippedLineCount: 3 }),
+          codex: diagnostics(),
+          opencode: diagnostics(),
         },
-      }),
+      })),
     });
 
     await expect(runCli(['--verbose'], deps)).resolves.toBe(0);
 
-    expect(deps.stdout).toHaveBeenCalledWith('No Claude Code transcripts found for this repo.');
+    expect(deps.stdout).toHaveBeenCalledWith('No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).');
     const stderr = deps.stderr.mock.calls.map(([message]) => message).join('\n');
-    expect(stderr).toContain('malformed-line-count: 2');
-    expect(stderr).toContain('skipped-line-count: 3');
-    expect(stderr).toContain('dedupe-count: 4');
+    expect(stderr).toContain('claude-code: malformed-line-count: 2');
+    expect(stderr).toContain('claude-code: skipped-line-count: 3');
+    expect(stderr).toContain('claude-code: dedupe-count: 4');
   });
 
   it('prints gh setup guidance and returns failure when gh is unavailable', async () => {
@@ -303,25 +334,24 @@ describe('runCli', () => {
     expect(deps.upsertPrComment.mock.calls[0]?.[0].renderMarkdown).toEqual(expect.any(Function));
   });
 
-  it('--verbose includes transcript diagnostics on stderr', async () => {
+  it('--verbose includes per-source diagnostics on stderr', async () => {
     const deps = createDeps({
-      readClaudeTranscripts: vi.fn().mockResolvedValue({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
         events: [usageEvent()],
         diagnostics: {
-          scannedFileCount: 5,
-          malformedLineCount: 2,
-          dedupedEventCount: 4,
-          skippedLineCount: 3,
+          'claude-code': diagnostics({ scannedFileCount: 5 }),
+          codex: diagnostics({ scannedFileCount: 1, malformedLineCount: 1 }),
+          opencode: diagnostics({ warningMessages: ['OpenCode skipped: node:sqlite unavailable'] }),
         },
-      }),
+      })),
     });
 
     await expect(runCli(['--verbose', '--dry-run'], deps)).resolves.toBe(0);
 
     const stderr = deps.stderr.mock.calls.map(([message]) => message).join('\n');
-    expect(stderr).toContain('malformed-line-count: 2');
-    expect(stderr).toContain('skipped-line-count: 3');
-    expect(stderr).toContain('dedupe-count: 4');
+    expect(stderr).toContain('claude-code: scanned-file-count: 5');
+    expect(stderr).toContain('codex: malformed-line-count: 1');
+    expect(stderr).toContain('opencode: OpenCode skipped: node:sqlite unavailable');
   });
 
   it('--pr passes the PR number to the resolver', async () => {
