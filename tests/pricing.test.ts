@@ -50,6 +50,14 @@ describe('estimateUsageCost', () => {
     });
     expect(price.warning).toBe('No bundled pricing for unknown-model; counted tokens without dollar cost.');
   });
+
+  it('prefers source-reported costs over token estimates', () => {
+    const price = estimateUsageCost(usageEvent({ sourceCostUsd: 1.23 }));
+
+    expect(price.costUsd).toBe(1.23);
+    expect(price.label).toBe('source reported');
+    expect(price.warning).toBeUndefined();
+  });
 });
 
 describe('bundled pricing coverage', () => {
@@ -285,6 +293,33 @@ describe('priceAttributionResult', () => {
     expect(priced.buckets[0].warning).toBeUndefined();
     expect(priced.warnings).toBeUndefined();
     expect(priced.totalCostUsd).toBeCloseTo(12.18, 10);
+  });
+
+  it('combines source-reported costs with token estimates for remaining usage', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 2_000_000,
+            outputTokens: 200_000,
+            cacheWriteTokens: 20_000,
+            cacheReadTokens: 200_000,
+            models: ['claude-sonnet-4-6'],
+            sourceCostUsd: 9,
+            sourceCostTokenTotals: {
+              inputTokens: 1_000_000,
+              outputTokens: 100_000,
+              cacheWriteTokens: 10_000,
+              cacheReadTokens: 100_000,
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBeCloseTo(13.5675, 10);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.totalCostUsd).toBeCloseTo(13.5675, 10);
   });
 
   it('deduplicates aggregate warnings', () => {

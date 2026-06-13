@@ -205,6 +205,7 @@ function createUsageCandidate(
   const fallbackKey = `${filePath}:${lineNumber}`;
   const nestedSuffix = nestedPath.length > 0 ? `:${nestedPath.join('.')}` : '';
   const stableIdentity = getStableIdentity(source);
+  const sourceCostUsd = getSourceCostUsd(source);
   const inheritedIdentity =
     typeof context.messageId === 'string' && typeof context.requestId === 'string'
       ? `${context.messageId}:${context.requestId}`
@@ -224,6 +225,7 @@ function createUsageCandidate(
       cacheWriteTokens: tokenTotals.cacheWriteTokens,
       cacheReadTokens: tokenTotals.cacheReadTokens,
       sessionId: context.sessionId ?? '',
+      ...(sourceCostUsd === undefined ? {} : { sourceCostUsd }),
       gitBranch: context.gitBranch,
     },
   };
@@ -302,6 +304,10 @@ function getString(value: unknown): string | undefined {
 
 function getNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function getSourceCostUsd(source: JsonObject): number | undefined {
+  return getNumber(source.costUSD) ?? getNumber(source.cost_usd);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

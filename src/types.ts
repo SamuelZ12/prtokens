@@ -10,6 +10,7 @@ export interface UsageEvent {
   cacheWriteTokens: number;
   cacheReadTokens: number;
   sessionId: string;
+  sourceCostUsd?: number;
   gitBranch?: string;
 }
 
@@ -41,6 +42,9 @@ export interface AttributionBucket extends TokenTotals {
   lowConfidenceEventCount: number;
   models: string[];
   modelTokenTotals?: ModelTokenTotals;
+  sourceCostUsd?: number;
+  sourceCostTokenTotals?: Omit<TokenTotals, 'sessionCount'>;
+  sourceCostModelTokenTotals?: ModelTokenTotals;
 }
 
 export interface AttributionResult {

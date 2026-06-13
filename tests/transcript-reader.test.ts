@@ -27,7 +27,7 @@ describe('readClaudeTranscripts', () => {
     await writeFile(
       join(projectDir, 'session.jsonl'),
       [
-        '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":20}},"gitBranch":"feature"}',
+        '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","costUSD":0.1234,"message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":20}},"gitBranch":"feature"}',
         '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10}},"gitBranch":"feature"}',
         '{"sessionId":"s2","timestamp":"2026-06-12T10:05:00.000Z","message":{"id":"m2","model":"claude-opus-4-8","sidechains":[{"usage":{"input_tokens":50,"output_tokens":5}}]},"gitBranch":"main"}',
         'not json',
@@ -43,6 +43,7 @@ describe('readClaudeTranscripts', () => {
       outputTokens: 10,
       cacheWriteTokens: 5,
       cacheReadTokens: 20,
+      sourceCostUsd: 0.1234,
       gitBranch: 'feature',
     });
     expect(result.events[1]).toMatchObject({
