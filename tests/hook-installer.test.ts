@@ -340,6 +340,49 @@ describe('installGlobalPrePushHook', () => {
     expect(previousStatusExitIndex).toBeLessThan(backgroundLaunchIndex);
   });
 
+  it.each(['exit 0', 'exec ./custom-pre-push'])(
+    'returns a failed result for an existing shell hook ending in terminal %s',
+    (terminalCommand) => {
+      const existing = `#!/bin/sh\necho before\n${terminalCommand}\n`;
+      const { deps, files, commands } = createDeps({
+        commands: {
+          'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+        },
+        files: {
+          '/custom/hooks/pre-push': existing,
+        },
+      });
+
+      const result = installGlobalPrePushHook(deps);
+
+      expect(result).toMatchObject({ ok: false, hookPath: '/custom/hooks/pre-push' });
+      expect(result.error).toMatch(/exit|exec|manual merge/);
+      expect(files.get('/custom/hooks/pre-push')).toBe(existing);
+      expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+      expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+      expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+    },
+  );
+
+  it('allows appending after non-terminal comments and blank lines', () => {
+    const existing = '#!/bin/sh\necho before\n\n# done\n';
+    const { deps, files, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result.hookAction).toBe('appended-to-existing-hook');
+    expect(files.get('/custom/hooks/pre-push')).toContain('# >>> prtokens >>>');
+    expect(deps.fs.writeFileSync).toHaveBeenCalledWith('/custom/hooks/pre-push', expect.stringContaining(existing));
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
   it('returns a failed result for an existing non-shell hook without modifying it', () => {
     const existing = "#!/usr/bin/env node\nconsole.log('x')\n";
     const { deps, files, commands } = createDeps({

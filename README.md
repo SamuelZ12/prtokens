@@ -57,7 +57,7 @@ First check whether you already have a global hooks path:
 git config --global --path --get core.hooksPath
 ```
 
-If this prints an absolute path, use that path as the target hooks directory and place or merge the `pre-push` hook there. Do not overwrite existing hooks. If a shell `pre-push` file already exists, prefer appending the managed block below to the end of that file. Keep the block after any logic that needs original `pre-push` stdin, because the block captures stdin with `cat > "$stdin_file"`. If you manually place it before trailing commands, those commands must not depend on stdin unless you adapt the hook to replay `"$stdin_file"` to them.
+If this prints an absolute path, use that path as the target hooks directory and place or merge the `pre-push` hook there. Do not overwrite existing hooks. If a shell `pre-push` file already exists, prefer appending the managed block below to the end of that file. `prtokens init` fails safely instead of appending when the existing hook's last meaningful line is terminal `exit` or `exec`, because the managed block would be unreachable. Keep the block after any logic that needs original `pre-push` stdin, because the block captures stdin with `cat > "$stdin_file"`. If you manually place it before trailing commands, those commands must not depend on stdin unless you adapt the hook to replay `"$stdin_file"` to them.
 
 If this prints a relative path, it is resolved by Git relative to each repository. `prtokens init` rejects that configuration because it cannot safely update one global hook file for all repositories. Set an absolute global hooks path or manually install the block in the repository-specific hook locations you intend to use.
 

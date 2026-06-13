@@ -232,6 +232,21 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       error: 'Unsupported non-shell existing pre-push hook.',
     };
   }
+  if (currentHookBody !== undefined && !hasManagedBlock(currentHookBody)) {
+    const terminalCommand = terminalLastCommand(currentHookBody);
+    if (terminalCommand !== undefined) {
+      return {
+        ok: false,
+        dryRun,
+        hooksDir,
+        hookPath,
+        hookBody: currentHookBody,
+        hookAction: 'appended-to-existing-hook',
+        coreHooksPathAction,
+        error: `Existing pre-push hook ends with terminal ${terminalCommand}; manual merge required.`,
+      };
+    }
+  }
   const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
   const resultBase = {
     dryRun,
@@ -278,7 +293,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
     return { hookBody: `#!/bin/sh\n${managedBlock}\n`, hookAction: 'installed' };
   }
 
-  const managedBlockPattern = new RegExp(`${escapeRegExp(managedStart)}[\\s\\S]*?${escapeRegExp(managedEnd)}`);
+  const managedBlockPattern = createManagedBlockPattern();
   if (managedBlockPattern.test(currentHookBody)) {
     const managedBlock = renderManagedBlock(prtokensBinPath, trailingContentAfterManagedBlock(currentHookBody).trim() === '');
     const hookBody = currentHookBody.replace(managedBlockPattern, managedBlock);
@@ -296,6 +311,35 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
     hookBody: `${currentHookBody}${separator}${managedBlock}\n`,
     hookAction: 'appended-to-existing-hook',
   };
+}
+
+function hasManagedBlock(hookBody: string): boolean {
+  return createManagedBlockPattern().test(hookBody);
+}
+
+function createManagedBlockPattern(): RegExp {
+  return new RegExp(`${escapeRegExp(managedStart)}[\\s\\S]*?${escapeRegExp(managedEnd)}`);
+}
+
+function terminalLastCommand(hookBody: string): 'exit' | 'exec' | undefined {
+  const lastMeaningfulLine = hookBody
+    .split('\n')
+    .map((line) => line.trim())
+    .reverse()
+    .find((line) => line !== '' && !line.startsWith('#'));
+
+  if (lastMeaningfulLine === undefined) {
+    return undefined;
+  }
+
+  if (/^exit(?:\s|$)/.test(lastMeaningfulLine)) {
+    return 'exit';
+  }
+  if (/^exec(?:\s|$)/.test(lastMeaningfulLine)) {
+    return 'exec';
+  }
+
+  return undefined;
 }
 
 function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean): string {
