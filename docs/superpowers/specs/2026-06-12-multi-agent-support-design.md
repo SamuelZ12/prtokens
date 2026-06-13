@@ -77,8 +77,11 @@ cross-checked against ccusage's Codex adapter):
 
 **Parse strategy:** stream lines per file. Read `session_meta` first; if
 `payload.cwd` ≠ resolved `repoRoot`, skip the entire file (cheap filter —
-~270 files on the target machine). Track the latest `turn_context` model.
-Emit one `UsageEvent` per `token_count` with non-null `info`.
+~270 files on the target machine). Files with no parseable `session_meta`
+`cwd` (pre-dating the format) are skipped entirely and tallied in
+diagnostics — repo matching is impossible without it. Track the latest
+`turn_context` model. Emit one `UsageEvent` per `token_count` with non-null
+`info`.
 
 **Token mapping** (from `last_token_usage`):
 
@@ -144,7 +147,8 @@ fields where `json_extract(data,'$.role') = 'assistant'` and
 `timestamp` = ISO-8601 from `time.completed ?? time.created` (epoch ms).
 `gitBranch` = undefined — OpenCode stores no branch, so these events take the
 existing low-confidence path (attributed by timestamp, counted in the
-low-confidence percentage). Dedupe: message `id` is a primary key; event id =
+low-confidence percentage). Dedupe: message `id`, applied across all opened
+DB files (a message migrated between DBs counts once); event id =
 `opencode-db:<messageId>`.
 
 The per-message `cost` field is ignored (it is 0 under subscription auth);
