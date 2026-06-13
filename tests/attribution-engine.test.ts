@@ -220,4 +220,30 @@ describe('attributeUsageToCommits', () => {
       },
     });
   });
+
+  it('counts same raw session id from different agents as separate sessions', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      events: [
+        usageEvent({
+          id: 'claude-event',
+          agent: 'claude-code',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:30:00.000Z',
+          sessionId: 'shared-session',
+        }),
+        usageEvent({
+          id: 'codex-event',
+          agent: 'codex',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:35:00.000Z',
+          sessionId: 'shared-session',
+        }),
+      ],
+    });
+
+    expect(result.buckets[1]).toMatchObject({ eventCount: 2, sessionCount: 2 });
+    expect(result.totals.sessionCount).toBe(2);
+  });
 });
