@@ -58,6 +58,39 @@ describe('estimateUsageCost', () => {
     expect(price.label).toBe('source reported');
     expect(price.warning).toBeUndefined();
   });
+
+  it('prices Claude 1-hour cache creation at twice the input rate', () => {
+    const price = estimateUsageCost(
+      usageEvent({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheWriteTokens: 2_000_000,
+        cacheWrite5mTokens: 1_000_000,
+        cacheWrite1hTokens: 1_000_000,
+        cacheReadTokens: 0,
+      }),
+    );
+
+    expect(price.costUsd).toBeCloseTo(9.75, 10);
+    expect(price.pricedTokens).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 2_000_000,
+      cacheWrite5mTokens: 1_000_000,
+      cacheWrite1hTokens: 1_000_000,
+      cacheReadTokens: 0,
+    });
+  });
+
+  it('keeps flat cache creation pricing when no duration breakdown exists', () => {
+    const price = estimateUsageCost(
+      usageEvent({ inputTokens: 0, outputTokens: 0, cacheWriteTokens: 2_000_000, cacheReadTokens: 0 }),
+    );
+
+    expect(price.costUsd).toBeCloseTo(7.5, 10);
+    expect(price.pricedTokens.cacheWrite5mTokens).toBeUndefined();
+    expect(price.pricedTokens.cacheWrite1hTokens).toBeUndefined();
+  });
 });
 
 describe('bundled pricing coverage', () => {
@@ -320,6 +353,37 @@ describe('priceAttributionResult', () => {
     expect(priced.buckets[0].costUsd).toBeCloseTo(13.5675, 10);
     expect(priced.buckets[0].warning).toBeUndefined();
     expect(priced.totalCostUsd).toBeCloseTo(13.5675, 10);
+  });
+
+  it('subtracts source-priced cache duration totals before estimating remaining usage', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheWriteTokens: 2_000_000,
+            cacheWrite5mTokens: 1_000_000,
+            cacheWrite1hTokens: 1_000_000,
+            cacheReadTokens: 0,
+            models: ['claude-sonnet-4-6'],
+            sourceCostUsd: 2,
+            sourceCostTokenTotals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheWriteTokens: 1_000_000,
+              cacheWrite5mTokens: 250_000,
+              cacheWrite1hTokens: 750_000,
+              cacheReadTokens: 0,
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBeCloseTo(6.3125, 10);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.totalCostUsd).toBeCloseTo(6.3125, 10);
   });
 
   it('deduplicates aggregate warnings', () => {

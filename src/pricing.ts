@@ -12,6 +12,8 @@ interface PriceableTokens {
   inputTokens: number;
   outputTokens: number;
   cacheWriteTokens: number;
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   cacheReadTokens: number;
 }
 
@@ -180,6 +182,8 @@ function priceableTokens(tokens: PriceableTokens): PriceableTokens {
     inputTokens: tokens.inputTokens,
     outputTokens: tokens.outputTokens,
     cacheWriteTokens: tokens.cacheWriteTokens,
+    ...(tokens.cacheWrite5mTokens === undefined ? {} : { cacheWrite5mTokens: tokens.cacheWrite5mTokens }),
+    ...(tokens.cacheWrite1hTokens === undefined ? {} : { cacheWrite1hTokens: tokens.cacheWrite1hTokens }),
     cacheReadTokens: tokens.cacheReadTokens,
   };
 }
@@ -189,8 +193,23 @@ function subtractTokens(total: PriceableTokens, covered: PriceableTokens): Price
     inputTokens: Math.max(0, total.inputTokens - covered.inputTokens),
     outputTokens: Math.max(0, total.outputTokens - covered.outputTokens),
     cacheWriteTokens: Math.max(0, total.cacheWriteTokens - covered.cacheWriteTokens),
+    ...subtractOptionalTokens('cacheWrite5mTokens', total, covered),
+    ...subtractOptionalTokens('cacheWrite1hTokens', total, covered),
     cacheReadTokens: Math.max(0, total.cacheReadTokens - covered.cacheReadTokens),
   };
+}
+
+function subtractOptionalTokens(
+  key: 'cacheWrite5mTokens' | 'cacheWrite1hTokens',
+  total: PriceableTokens,
+  covered: PriceableTokens,
+): Partial<Pick<PriceableTokens, 'cacheWrite5mTokens' | 'cacheWrite1hTokens'>> {
+  if (total[key] === undefined && covered[key] === undefined) {
+    return {};
+  }
+
+  const remaining = Math.max(0, (total[key] ?? 0) - (covered[key] ?? 0));
+  return key === 'cacheWrite5mTokens' ? { cacheWrite5mTokens: remaining } : { cacheWrite1hTokens: remaining };
 }
 
 function subtractModelTokenTotals(
@@ -270,7 +289,7 @@ function estimateTokenCost(model: string, tokens: PriceableTokens): UsageCostEst
   const baseCostUsd =
     (tokens.inputTokens / 1_000_000) * rates.inputUsdPerMillion +
     (tokens.outputTokens / 1_000_000) * rates.outputUsdPerMillion +
-    (tokens.cacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion +
+    cacheWriteCostUsd(tokens, rates) +
     (tokens.cacheReadTokens / 1_000_000) * rates.cacheReadUsdPerMillion;
 
   return {
@@ -278,4 +297,15 @@ function estimateTokenCost(model: string, tokens: PriceableTokens): UsageCostEst
     pricedTokens,
     label: 'estimated at API rates',
   };
+}
+
+function cacheWriteCostUsd(tokens: PriceableTokens, rates: PricingRates): number {
+  if (tokens.cacheWrite5mTokens === undefined && tokens.cacheWrite1hTokens === undefined) {
+    return (tokens.cacheWriteTokens / 1_000_000) * rates.cacheWriteUsdPerMillion;
+  }
+
+  return (
+    ((tokens.cacheWrite5mTokens ?? 0) / 1_000_000) * rates.cacheWriteUsdPerMillion +
+    ((tokens.cacheWrite1hTokens ?? 0) / 1_000_000) * rates.inputUsdPerMillion * 2
+  );
 }
