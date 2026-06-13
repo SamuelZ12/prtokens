@@ -42,11 +42,12 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
   ];
   const totalSessionIds = new Set<string>();
 
-  const totals = allBuckets.reduce(
+  const totals = allBuckets.reduce<AttributionResult['totals']>(
     (total, bucket) => {
       total.inputTokens += bucket.inputTokens;
       total.outputTokens += bucket.outputTokens;
       total.cacheWriteTokens += bucket.cacheWriteTokens;
+      addCacheDurationTokens(total, bucket);
       total.cacheReadTokens += bucket.cacheReadTokens;
       total.attributedEventCount += bucket.eventCount;
       total.lowConfidenceEventCount += bucket.lowConfidenceEventCount;

@@ -312,6 +312,8 @@ describe('attributeUsageToCommits', () => {
         },
       },
     });
+    expect(result.totals.cacheWrite5mTokens).toBe(7);
+    expect(result.totals.cacheWrite1hTokens).toBe(11);
   });
 
   it('counts same raw session id from different agents as separate sessions', () => {

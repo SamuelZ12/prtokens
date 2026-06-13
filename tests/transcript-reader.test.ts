@@ -78,7 +78,7 @@ describe('readClaudeTranscripts', () => {
     });
   });
 
-  it('keeps flat Claude cache creation tokens when no duration breakdown exists', async () => {
+  it('keeps flat Claude cache creation tokens when cache_creation has no duration breakdown', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
     const normalizedRepo = repoRoot.replaceAll('/', '-');
@@ -87,7 +87,7 @@ describe('readClaudeTranscripts', () => {
 
     await writeFile(
       join(projectDir, 'session.jsonl'),
-      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":13,"cache_read_input_tokens":20}},"gitBranch":"feature"}',
+      '{"sessionId":"s1","timestamp":"2026-06-12T10:00:00.000Z","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6","usage":{"input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":13,"cache_creation":{},"cache_read_input_tokens":20}},"gitBranch":"feature"}',
     );
 
     const result = await readClaudeTranscripts({ repoRoot, homeDir });

@@ -262,12 +262,14 @@ function mapUsage(
   const inputTokens = getNumber(usage.input_tokens) ?? 0;
   const outputTokens = getNumber(usage.output_tokens) ?? 0;
   const cacheCreation = getObject(usage.cache_creation);
-  const cacheWrite5mTokens = getNumber(cacheCreation?.ephemeral_5m_input_tokens) ?? 0;
-  const cacheWrite1hTokens = getNumber(cacheCreation?.ephemeral_1h_input_tokens) ?? 0;
-  const cacheWriteTokens =
-    cacheCreation === undefined
-      ? (getNumber(usage.cache_creation_input_tokens) ?? 0)
-      : cacheWrite5mTokens + cacheWrite1hTokens;
+  const rawCacheWrite5mTokens = getNumber(cacheCreation?.ephemeral_5m_input_tokens);
+  const rawCacheWrite1hTokens = getNumber(cacheCreation?.ephemeral_1h_input_tokens);
+  const hasCacheDuration = rawCacheWrite5mTokens !== undefined || rawCacheWrite1hTokens !== undefined;
+  const cacheWrite5mTokens = rawCacheWrite5mTokens ?? 0;
+  const cacheWrite1hTokens = rawCacheWrite1hTokens ?? 0;
+  const cacheWriteTokens = hasCacheDuration
+    ? cacheWrite5mTokens + cacheWrite1hTokens
+    : (getNumber(usage.cache_creation_input_tokens) ?? 0);
   const cacheReadTokens = getNumber(usage.cache_read_input_tokens) ?? 0;
   const hasUsableValue = [
     usage.input_tokens,
@@ -286,7 +288,7 @@ function mapUsage(
     inputTokens,
     outputTokens,
     cacheWriteTokens,
-    ...(cacheCreation === undefined ? {} : { cacheWrite5mTokens, cacheWrite1hTokens }),
+    ...(hasCacheDuration ? { cacheWrite5mTokens, cacheWrite1hTokens } : {}),
     cacheReadTokens,
   };
 }
