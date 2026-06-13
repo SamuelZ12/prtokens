@@ -32,26 +32,71 @@ Claude Code transcripts, Codex rollouts, and OpenCode databases never leave your
 
 ## Optional Global Pre-Push Hook
 
-To run `prtokens` as a best-effort background task from `pre-push` on this machine, install a global `pre-push` hook. First check whether you already have a global hooks path:
+To run `prtokens` as a best-effort background task from `pre-push` on this machine, install it globally and run the setup command:
+
+```bash
+npm i -g prtokens
+prtokens init
+```
+
+Preview the changes without writing files:
+
+```bash
+prtokens init --dry-run
+```
+
+`prtokens init` installs or updates a sentinel-wrapped managed block in the global `pre-push` hook. If a global `core.hooksPath` is already configured, prtokens respects it and writes the hook there. If it is unset, prtokens creates `~/.config/git/hooks/pre-push` and sets `core.hooksPath` to `~/.config/git/hooks`.
+
+Setup checks for Node.js 22.13+, GitHub CLI, and `gh auth login` are informational. The hook still installs so you can fix prerequisites later.
+
+<details><summary>Manual / advanced setup</summary>
+
+First check whether you already have a global hooks path:
 
 ```sh
 git config --global --get core.hooksPath
 ```
 
-If this prints a path, place or merge the `pre-push` hook in that existing directory instead of overwriting it. If it prints nothing, this example creates a global hooks directory and configures Git to use it:
+If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a `pre-push` file already exists, merge only the managed block below into the existing shell hook.
+
+If it prints nothing, create a global hooks directory and configure Git to use it:
 
 ```sh
 mkdir -p ~/.config/git/hooks
-cat > ~/.config/git/hooks/pre-push <<'EOF'
-#!/bin/sh
-stdin_file="$(mktemp)"
-cat > "$stdin_file"
+git config --global core.hooksPath ~/.config/git/hooks
+```
 
-repo_git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
-repo_hook="${repo_git_dir:+$repo_git_dir/hooks/pre-push}"
-if [ -n "$repo_hook" ] && [ -x "$repo_hook" ]; then
-  "$repo_hook" "$@" < "$stdin_file"
-  status=$?
+For a new `pre-push` file, start with:
+
+```sh
+#!/bin/sh
+
+# >>> prtokens >>>
+prtokens_previous_status=$?
+if [ "$prtokens_previous_status" -ne 0 ]; then
+  exit "$prtokens_previous_status"
+fi
+# Installed by `prtokens init`. Re-run prtokens init to update this block.
+stdin_file="$(mktemp)" || exit 1
+if ! cat > "$stdin_file"; then
+  rm -f "$stdin_file"
+  exit 1
+fi
+
+repo_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+repo_hook="${repo_common_dir:+$repo_common_dir/hooks/pre-push}"
+current_hook="$0"
+repo_hook_path="$repo_hook"
+if command -v realpath >/dev/null 2>&1; then
+  current_hook="$(realpath "$current_hook" 2>/dev/null || printf '%s\n' "$current_hook")"
+  repo_hook_path="$(realpath "$repo_hook" 2>/dev/null || printf '%s\n' "$repo_hook")"
+fi
+if [ -n "$repo_hook" ] && [ -x "$repo_hook" ] && [ "$repo_hook_path" != "$current_hook" ]; then
+  if "$repo_hook" "$@" < "$stdin_file"; then
+    status=0
+  else
+    status=$?
+  fi
   if [ "$status" -ne 0 ]; then
     rm -f "$stdin_file"
     exit "$status"
@@ -59,14 +104,21 @@ if [ -n "$repo_hook" ] && [ -x "$repo_hook" ]; then
 fi
 
 rm -f "$stdin_file"
-prtokens >/dev/null 2>&1 </dev/null &
+prtokens_bin="$(command -v prtokens 2>/dev/null || echo prtokens)"
+"$prtokens_bin" >/dev/null 2>&1 </dev/null &
 exit 0
-EOF
-chmod +x ~/.config/git/hooks/pre-push
-git config --global core.hooksPath ~/.config/git/hooks
+# <<< prtokens <<<
 ```
 
-The hook invokes `prtokens` directly, so `prtokens` must be available on `PATH` for Git hooks, such as through a global install or another wrapper command. Because this runs from `pre-push`, it may not observe newly pushed commits immediately, especially on first pushes or PR creation. Repositories with a local `core.hooksPath` bypass the global hook. `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
+Then make the hook executable:
+
+```sh
+chmod +x "$(git config --global --get core.hooksPath)/pre-push"
+```
+
+</details>
+
+Caveats: `prtokens` must be on `PATH` for Git hooks; `pre-push` may not observe newly pushed commits immediately, especially on first pushes or PR creation; repositories with a local `core.hooksPath` bypass the global hook; `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
 
 ## Exit Behavior
 
