@@ -617,11 +617,11 @@ describe('runPreflight', () => {
     ]);
   });
 
-  it('reports GitHub auth failure as failed when gh is installed', () => {
+  it('reports gh installed but unauthenticated', () => {
     const { deps } = createDeps({
       commands: {
         'gh --version': { stdout: 'gh version 2.0.0\n', status: 0 },
-        'gh auth status': { stdout: '', stderr: 'not logged in\n', status: 1 },
+        'gh auth status': { stdout: '', status: 1 },
       },
     });
 
@@ -631,7 +631,7 @@ describe('runPreflight', () => {
       {
         name: 'Node.js',
         status: 'ok',
-        message: 'Node.js 22.13.0 satisfies the required 22.13.0.',
+        message: 'Node.js 22.13.0 satisfies >=22.13.0.',
       },
       {
         name: 'GitHub CLI',
@@ -645,6 +645,19 @@ describe('runPreflight', () => {
         hint: 'Run gh auth login.',
       },
     ]);
+  });
+
+  it('reports all checks ok when Node, gh, and auth are ready', () => {
+    const { deps } = createDeps({
+      commands: {
+        'gh --version': { stdout: 'gh version 2.0.0\n', status: 0 },
+        'gh auth status': { stdout: 'Logged in to github.com\n', status: 0 },
+      },
+    });
+
+    const result = runPreflight(deps);
+
+    expect(result.checks.map((check) => check.status)).toEqual(['ok', 'ok', 'ok']);
   });
 });
 
