@@ -79,7 +79,7 @@ describe('installGlobalPrePushHook', () => {
   it('returns a failed result when core.hooksPath cannot be configured', () => {
     const hooksDir = '/home/alice/.config/git/hooks';
     const hookPath = join(hooksDir, 'pre-push');
-    const { deps } = createDeps({
+    const { deps, commands } = createDeps({
       commands: {
         [`git config --global core.hooksPath ${hooksDir}`]: { stdout: 'permission denied\n', status: 1 },
       },
@@ -94,6 +94,10 @@ describe('installGlobalPrePushHook', () => {
     });
     expect(result.hookAction).not.toBe('installed');
     expect(result.error).toContain('core.hooksPath');
+    expect(commands).toEqual([
+      { cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] },
+      { cmd: 'git', args: ['config', '--global', 'core.hooksPath', hooksDir] },
+    ]);
   });
 
   it('respects an existing global core.hooksPath without changing git config', () => {
@@ -188,7 +192,7 @@ describe('installGlobalPrePushHook', () => {
 
   it('returns a failed result when the hook cannot be written', () => {
     const hooksDir = '/home/alice/.config/git/hooks';
-    const { deps } = createDeps({
+    const { deps, commands } = createDeps({
       commands: {
         [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
       },
@@ -204,6 +208,7 @@ describe('installGlobalPrePushHook', () => {
       hookPath: '/home/alice/.config/git/hooks/pre-push',
       error: 'permission denied',
     });
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
   });
 });
 
