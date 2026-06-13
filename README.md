@@ -54,10 +54,12 @@ Setup checks for Node.js 22.13+, GitHub CLI, and `gh auth login` are information
 First check whether you already have a global hooks path:
 
 ```sh
-git config --global --get core.hooksPath
+git config --global --path --get core.hooksPath
 ```
 
-If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a `pre-push` file already exists, merge only the managed block below into the existing shell hook.
+If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a shell `pre-push` file already exists, append the managed block below to the end of that file. Do not place it before commands that still need to run, because the block may end with `exit 0`.
+
+If replacing an existing `# >>> prtokens >>>` / `# <<< prtokens <<<` managed block and the hook has trailing commands after it, prefer `prtokens init --dry-run` to preview the exact replacement before running `prtokens init`. Only omit the final `exit 0` manually if you intentionally place the block before trailing hook logic.
 
 If it prints nothing, create a global hooks directory and configure Git to use it:
 
@@ -104,16 +106,18 @@ if [ -n "$repo_hook" ] && [ -x "$repo_hook" ] && [ "$repo_hook_path" != "$curren
 fi
 
 rm -f "$stdin_file"
-prtokens_bin="$(command -v prtokens 2>/dev/null || echo prtokens)"
+prtokens_bin="$(command -v prtokens 2>/dev/null || echo '/absolute/path/to/prtokens')"
 "$prtokens_bin" >/dev/null 2>&1 </dev/null &
 exit 0
 # <<< prtokens <<<
 ```
 
+Replace `/absolute/path/to/prtokens` with the path to your installed binary. `prtokens init --dry-run` prints the exact managed block prtokens would generate, including its absolute fallback path.
+
 Then make the hook executable:
 
 ```sh
-chmod +x "$(git config --global --get core.hooksPath)/pre-push"
+chmod +x "$(git config --global --path --get core.hooksPath)/pre-push"
 ```
 
 </details>
