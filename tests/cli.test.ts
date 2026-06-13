@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { isEntrypoint, runCli } from '../src/cli.js';
 import { renderPrComment } from '../src/comment-renderer.js';
 
@@ -78,6 +78,22 @@ function createDeps(overrides = {}) {
     resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
     upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
+    runPreflight: vi.fn().mockReturnValue({
+      checks: [
+        { name: 'Node.js', status: 'ok', message: 'Node.js 22.13.0 satisfies >=22.13.0.' },
+        { name: 'GitHub CLI', status: 'ok', message: 'GitHub CLI is installed.' },
+        { name: 'GitHub auth', status: 'ok', message: 'GitHub CLI is authenticated.' },
+      ],
+    }),
+    installGlobalPrePushHook: vi.fn().mockReturnValue({
+      ok: true,
+      dryRun: false,
+      hooksDir: '/home/alice/.config/git/hooks',
+      hookPath: '/home/alice/.config/git/hooks/pre-push',
+      hookBody: '# >>> prtokens >>>\nbody\n# <<< prtokens <<<',
+      hookAction: 'installed',
+      coreHooksPathAction: 'set',
+    }),
     cwd: '/repo',
     stdout: vi.fn(),
     stderr: vi.fn(),
@@ -90,6 +106,82 @@ beforeEach(() => {
 });
 
 describe('runCli', () => {
+  it('routes init to the hook installer and prints a setup summary', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['init'], deps)).resolves.toBe(0);
+
+    expect(deps.installGlobalPrePushHook).toHaveBeenCalledWith({ dryRun: false });
+    expect(deps.runPreflight).toHaveBeenCalledTimes(1);
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    const output = (deps.stdout as Mock).mock.calls.map(([message]) => message).join('\n');
+    expect(output).toContain('prtokens init complete');
+    expect(output).toContain('Hook: installed at /home/alice/.config/git/hooks/pre-push');
+    expect(output).toContain('core.hooksPath: set to /home/alice/.config/git/hooks');
+    expect(output).toContain('Prerequisites:');
+    expect(output).toContain('Push a branch that has an open PR and prtokens will comment.');
+  });
+
+  it('prints the init dry-run plan and hook body without installing', async () => {
+    const deps = createDeps({
+      installGlobalPrePushHook: vi.fn().mockReturnValue({
+        ok: true,
+        dryRun: true,
+        hooksDir: '/home/alice/.config/git/hooks',
+        hookPath: '/home/alice/.config/git/hooks/pre-push',
+        hookBody: '# >>> prtokens >>>\nbody\n# <<< prtokens <<<',
+        hookAction: 'installed',
+        coreHooksPathAction: 'would-set',
+      }),
+    });
+
+    await expect(runCli(['init', '--dry-run'], deps)).resolves.toBe(0);
+
+    expect(deps.installGlobalPrePushHook).toHaveBeenCalledWith({ dryRun: true });
+    const output = (deps.stdout as Mock).mock.calls.map(([message]) => message).join('\n');
+    expect(output).toContain('prtokens init dry run');
+    expect(output).toContain('Would install hook at /home/alice/.config/git/hooks/pre-push');
+    expect(output).toContain('# >>> prtokens >>>\nbody\n# <<< prtokens <<<');
+  });
+
+  it('returns failure when init hook installation fails', async () => {
+    const deps = createDeps({
+      installGlobalPrePushHook: vi.fn().mockReturnValue({
+        ok: false,
+        dryRun: false,
+        hooksDir: '/home/alice/.config/git/hooks',
+        hookPath: '/home/alice/.config/git/hooks/pre-push',
+        hookBody: '# >>> prtokens >>>\nbody\n# <<< prtokens <<<',
+        hookAction: 'installed',
+        coreHooksPathAction: 'set',
+        error: 'permission denied',
+      }),
+    });
+
+    await expect(runCli(['init'], deps)).resolves.toBe(1);
+
+    expect(deps.stderr).toHaveBeenCalledWith('Failed to install pre-push hook at /home/alice/.config/git/hooks/pre-push: permission denied');
+  });
+
+  it('rejects unknown init flags without running report mode', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['init', '--json'], deps)).resolves.toBe(1);
+
+    expect(deps.installGlobalPrePushHook).not.toHaveBeenCalled();
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.stderr).toHaveBeenCalledWith(expect.stringContaining("Unknown option '--json'"));
+  });
+
+  it('keeps bare report mode unchanged', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
+
+    expect(deps.installGlobalPrePushHook).not.toHaveBeenCalled();
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+  });
+
   it('--dry-run prints markdown and does not check gh or post', async () => {
     const deps = createDeps();
 

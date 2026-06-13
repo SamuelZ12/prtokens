@@ -7,6 +7,17 @@ import { attributeUsageToCommits } from './attribution-engine.js';
 import { renderPrComment, type RenderAuthorInput } from './comment-renderer.js';
 import { defaultCommandRunner, resolvePullRequest } from './git-resolver.js';
 import { ensureGhReady, upsertPrComment } from './github-poster.js';
+import {
+  createDefaultHookInstallerDeps,
+  installGlobalPrePushHook,
+  runPreflight,
+  type CoreHooksPathAction,
+  type HookAction,
+  type InstallOptions,
+  type InstallResult,
+  type PreflightCheck,
+  type PreflightResult,
+} from './hook-installer.js';
 import { priceAttributionResult, type PricedAttributionBucket, type PricedAttributionResult } from './pricing.js';
 import { readAllUsage, type UsageDiagnostics } from './usage-readers.js';
 import type { AgentName, CommitRecord, UsageEvent } from './types.js';
@@ -21,6 +32,8 @@ export interface CliDeps {
   resolvePullRequest: typeof resolvePullRequest;
   ensureGhReady: typeof ensureGhReady;
   upsertPrComment: typeof upsertPrComment;
+  runPreflight: () => PreflightResult;
+  installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
 }
 
 interface CliFlags {
@@ -35,6 +48,10 @@ const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
 
 export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promise<number> {
   const cliDeps = withDefaultDeps(deps);
+  if (argv[0] === 'init') {
+    return runInit(argv.slice(1), cliDeps);
+  }
+
   const flags = parseCliFlags(argv, cliDeps.stderr);
   if (flags === undefined) {
     return 1;
@@ -144,6 +161,7 @@ if (isEntrypoint(import.meta.url, process.argv[1])) {
 }
 
 function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
+  const hookInstallerDeps = createDefaultHookInstallerDeps(resolvePrtokensBinPath());
   return {
     cwd: deps.cwd ?? process.cwd(),
     stdout: deps.stdout ?? ((message) => console.log(message)),
@@ -152,7 +170,106 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     resolvePullRequest: deps.resolvePullRequest ?? resolvePullRequest,
     ensureGhReady: deps.ensureGhReady ?? ensureGhReady,
     upsertPrComment: deps.upsertPrComment ?? upsertPrComment,
+    runPreflight: deps.runPreflight ?? (() => runPreflight(hookInstallerDeps)),
+    installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
   };
+}
+
+function resolvePrtokensBinPath(): string {
+  const entrypointPath = process.argv[1] ?? 'prtokens';
+  try {
+    return realpathSync(entrypointPath);
+  } catch {
+    return entrypointPath;
+  }
+}
+
+function runInit(argv: string[], deps: CliDeps): number {
+  const flags = parseInitFlags(argv, deps.stderr);
+  if (flags === undefined) {
+    return 1;
+  }
+
+  const install = deps.installGlobalPrePushHook({ dryRun: flags.dryRun });
+  const preflight = deps.runPreflight();
+  if (!install.ok) {
+    deps.stderr(`Failed to install pre-push hook at ${install.hookPath}: ${install.error ?? 'unknown error'}`);
+    return 1;
+  }
+
+  deps.stdout(formatInitResult(install, preflight));
+  return 0;
+}
+
+function parseInitFlags(argv: string[], stderr: (message: string) => void): { dryRun: boolean } | undefined {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        'dry-run': { type: 'boolean' },
+      },
+    });
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+
+  return { dryRun: parsed.values['dry-run'] === true };
+}
+
+function formatInitResult(install: InstallResult, preflight: PreflightResult): string {
+  const lines = [
+    install.dryRun ? 'prtokens init dry run' : 'prtokens init complete',
+    formatHookAction(install.hookAction, install.hookPath, install.dryRun),
+    formatCoreHooksPathAction(install.coreHooksPathAction, install.hooksDir),
+    'Prerequisites:',
+    ...preflight.checks.map(formatPreflightCheck),
+    'Push a branch that has an open PR and prtokens will comment.',
+  ];
+
+  if (install.dryRun) {
+    lines.push('Hook body:', install.hookBody);
+  }
+
+  return lines.join('\n');
+}
+
+function formatHookAction(action: HookAction, hookPath: string, dryRun: boolean): string {
+  const verb = formatHookActionVerb(action, dryRun);
+  return dryRun ? `${verb} hook at ${hookPath}` : `Hook: ${verb} at ${hookPath}`;
+}
+
+function formatHookActionVerb(action: HookAction, dryRun: boolean): string {
+  switch (action) {
+    case 'installed':
+      return dryRun ? 'Would install' : 'installed';
+    case 'updated-existing-block':
+      return dryRun ? 'Would update existing prtokens block in' : 'updated existing prtokens block in';
+    case 'appended-to-existing-hook':
+      return dryRun ? 'Would append prtokens block to existing' : 'appended prtokens block to existing';
+    case 'already-up-to-date':
+      return dryRun ? 'Would leave up-to-date' : 'already up to date';
+  }
+}
+
+function formatCoreHooksPathAction(action: CoreHooksPathAction, hooksDir: string): string {
+  switch (action) {
+    case 'set':
+      return `core.hooksPath: set to ${hooksDir}`;
+    case 'respected':
+      return `core.hooksPath: respected existing ${hooksDir}`;
+    case 'would-set':
+      return `core.hooksPath: would set to ${hooksDir}`;
+    case 'would-respect':
+      return `core.hooksPath: would respect existing ${hooksDir}`;
+  }
+}
+
+function formatPreflightCheck(check: PreflightCheck): string {
+  return `- ${check.name}: ${check.status} - ${check.message}${check.hint === undefined ? '' : ` ${check.hint}`}`;
 }
 
 function parseCliFlags(argv: string[], stderr: (message: string) => void): CliFlags | undefined {
