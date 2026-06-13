@@ -23,6 +23,7 @@ export type {
   UsageSourceDiagnostics,
 } from './usage-readers.js';
 export type {
+  AgentName,
   AttributionBucket,
   AttributionResult,
   CommitRecord,
