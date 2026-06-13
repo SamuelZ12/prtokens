@@ -47,11 +47,15 @@ function createDeps(overrides: Partial<HookInstallerDeps> & { files?: Record<str
 
 describe('installGlobalPrePushHook', () => {
   it('writes a fresh global pre-push hook and sets core.hooksPath when unset', () => {
-    const { deps, files, chmods, mkdirs, commands } = createDeps();
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const { deps, files, chmods, mkdirs, commands } = createDeps({
+      commands: {
+        [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
+      },
+    });
 
     const result = installGlobalPrePushHook(deps);
 
-    const hooksDir = '/home/alice/.config/git/hooks';
     const hookPath = join(hooksDir, 'pre-push');
     expect(result).toMatchObject({
       ok: true,
