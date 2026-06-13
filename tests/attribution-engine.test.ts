@@ -62,7 +62,7 @@ describe('attributeUsageToCommits', () => {
     });
   });
 
-  it('puts usage after the last commit in a visible uncommitted tail bucket', () => {
+  it('keeps usage after the last commit in diagnostics without adding it to PR totals', () => {
     const result = attributeUsageToCommits({
       branch: 'main',
       commits,
@@ -81,6 +81,8 @@ describe('attributeUsageToCommits', () => {
       eventCount: 1,
     });
     expect(result.buckets.map((bucket) => bucket.commitSha)).toEqual(['aaa1111', 'bbb2222']);
+    expect(result.totals).toMatchObject({ inputTokens: 0, outputTokens: 0, sessionCount: 0, attributedEventCount: 0 });
+    expect(result.coverage.attributedPercent).toBe(0);
   });
 
   it('attributes branch-matched usage before the first commit to the first commit', () => {

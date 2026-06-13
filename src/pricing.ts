@@ -61,10 +61,7 @@ export function priceAttributionResult(result: AttributionResult): PricedAttribu
   const preFirstCommit = result.preFirstCommit === undefined ? undefined : priceBucket(result.preFirstCommit);
   const buckets = result.buckets.map(priceBucket);
   const uncommittedTail = result.uncommittedTail === undefined ? undefined : priceBucket(result.uncommittedTail);
-  const allPricedBuckets = [
-    ...buckets,
-    ...(uncommittedTail === undefined ? [] : [uncommittedTail]),
-  ];
+  const allPricedBuckets = buckets;
   const warnings = [
     ...new Set(allPricedBuckets.flatMap((bucket) => (bucket.warning === undefined ? [] : [bucket.warning]))),
   ];

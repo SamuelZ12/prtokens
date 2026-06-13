@@ -36,10 +36,7 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
     addEventToBucket(bucket, event, lowConfidence);
   }
 
-  const allBuckets = [
-    ...buckets,
-    ...(uncommittedTail === undefined ? [] : [uncommittedTail]),
-  ];
+  const allBuckets = buckets;
   const totalSessionIds = new Set<string>();
 
   const totals = allBuckets.reduce<AttributionResult['totals']>(

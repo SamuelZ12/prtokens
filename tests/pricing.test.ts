@@ -307,6 +307,25 @@ describe('priceAttributionResult', () => {
     expect(priced.buckets[0].costUsd).toBe(0);
   });
 
+  it('prices uncommitted tail usage for diagnostics without adding it to PR totals', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [bucket({ commitSha: 'aaa1111', inputTokens: 0, outputTokens: 0 })],
+        uncommittedTail: bucket({
+          label: 'uncommitted tail',
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          eventCount: 1,
+          sessionCount: 1,
+        }),
+      }),
+    );
+
+    expect(priced.uncommittedTail?.costUsd).toBeGreaterThan(0);
+    expect(priced.totalCostUsd).toBe(0);
+    expect(priced.buckets[0].costUsd).toBe(0);
+  });
+
   it('does not price nonzero mixed-model buckets without per-model token totals', () => {
     const priced = priceAttributionResult(
       attributionResult({

@@ -510,6 +510,47 @@ describe('runCli', () => {
     expect(markdown).not.toContain('Cache Write');
     expect(markdown).not.toContain('Cache Read');
   });
+
+  it('excludes uncommitted tail usage from rendered PR totals while keeping JSON diagnostics', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
+        events: [
+          usageEvent({
+            id: 'committed-event',
+            timestamp: '2024-01-01T00:04:00.000Z',
+            inputTokens: 100,
+            outputTokens: 10,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 0,
+            sourceCostUsd: 1,
+          }),
+          usageEvent({
+            id: 'tail-event',
+            timestamp: '2024-01-01T00:10:00.000Z',
+            inputTokens: 300,
+            outputTokens: 30,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 0,
+            sessionId: 'session-tail',
+            sourceCostUsd: 3,
+          }),
+        ],
+      })),
+    });
+
+    await expect(runCli(['--json'], deps)).resolves.toBe(0);
+
+    const payload = JSON.parse(deps.stdout.mock.calls[0]?.[0]);
+    expect(payload.pricing.totalCostUsd).toBe(1);
+    expect(payload.pricing.uncommittedTail.costUsd).toBe(3);
+    expect(payload.agentTotals).toEqual([
+      expect.objectContaining({ agent: 'claude-code', costUsd: 1, inputTokens: 100, outputTokens: 10, sessionCount: 1 }),
+    ]);
+    expect(payload.markdown).toContain('**This PR cost ~$1.00 in tokens**');
+    expect(payload.markdown).toContain('| `abcdef1` | Add CLI wiring | 100 | 10 | ~$1.00 | 1 |');
+    expect(payload.markdown).not.toContain('uncommitted tail');
+    expect(payload.markdown).not.toContain('~$3.00');
+  });
 });
 
 describe('isEntrypoint', () => {
