@@ -207,8 +207,13 @@ describe('runCli', () => {
     await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
 
     expect(deps.stdout).toHaveBeenCalledTimes(1);
-    expect(deps.stdout.mock.calls[0]?.[0]).toContain('<!-- prtokens:v1 -->');
-    expect(deps.stdout.mock.calls[0]?.[0]).toContain('@octocat');
+    const markdown = deps.stdout.mock.calls[0]?.[0];
+    expect(markdown).toContain('<!-- prtokens:v1 -->');
+    expect(markdown).toContain('@octocat');
+    expect(markdown).toContain('| Commit | Message | In | Out | Cost | Sessions |');
+    expect(markdown).not.toContain('Cache Write');
+    expect(markdown).not.toContain('Cache Read');
+    expect(markdown).toContain('Cost includes prompt-cache write/read tokens when reported by the coding agent.');
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -273,6 +278,7 @@ describe('runCli', () => {
     expect(payload.diagnostics.codex.scannedFileCount).toBe(1);
     expect(payload.markdown).toContain('<!-- prtokens:v1 -->');
     expect(payload.markdown).toContain('Agents:');
+    expect(payload.attribution.preFirstCommit).toMatchObject({ cacheWriteTokens: 100, cacheReadTokens: 50 });
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -475,7 +481,7 @@ describe('runCli', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', prNumber: 123 });
   });
 
-  it('prints pre-first-commit usage before commit rows with cache tokens', async () => {
+  it('prints pre-first-commit usage before commit rows without cache columns', async () => {
     const deps = createDeps({
       readAllUsage: vi.fn().mockResolvedValue(allUsage({
         events: [
@@ -496,7 +502,9 @@ describe('runCli', () => {
     await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
 
     const markdown = deps.stdout.mock.calls[0]?.[0];
-    expect(markdown).toContain('| `pre-fir` | pre-first-commit work | 100 | 10 | 0 | 50 |');
+    expect(markdown).toContain('| `pre-fir` | pre-first-commit work | 100 | 10 | ~$0.00 | 1 |');
+    expect(markdown).not.toContain('Cache Write');
+    expect(markdown).not.toContain('Cache Read');
     expect(markdown.indexOf('pre-first-commit work')).toBeLessThan(markdown.indexOf('Add CLI wiring'));
   });
 });

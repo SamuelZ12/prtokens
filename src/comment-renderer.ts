@@ -195,14 +195,16 @@ function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSu
     '<details>',
     '<summary>Commit breakdown</summary>',
     '',
-    '| Commit | Message | In | Out | Cache Write | Cache Read | Cost | Sessions |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Commit | Message | In | Out | Cost | Sessions |',
+    '| --- | --- | ---: | ---: | ---: | ---: |',
     ...author.rows.map(
       (row) =>
         `| \`${truncateSha(row.sha)}\` | ${escapeTableCell(row.message)} | ${formatTokens(row.inputTokens)} | ${formatTokens(
           row.outputTokens,
-        )} | ${formatTokens(row.cacheWriteTokens)} | ${formatTokens(row.cacheReadTokens)} | ${formatCost(row.costUsd)} | ${row.sessionCount} |`,
+        )} | ${formatCost(row.costUsd)} | ${row.sessionCount} |`,
     ),
+    '',
+    'Cost includes prompt-cache write/read tokens when reported by the coding agent.',
     '',
     '</details>',
     '',
