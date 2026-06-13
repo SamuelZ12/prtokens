@@ -300,6 +300,47 @@ describe('installGlobalPrePushHook', () => {
     expect(content.match(/^#!\/bin\/sh/gm)).toHaveLength(1);
   });
 
+  it('preserves previous shell hook failure status when appending the managed block', () => {
+    const existing = '#!/bin/sh\nfalse\n';
+    const { deps, files } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    const content = files.get('/custom/hooks/pre-push') ?? '';
+    expect(result.hookAction).toBe('appended-to-existing-hook');
+    expect(content).toContain('# >>> prtokens >>>\nprtokens_previous_status=$?');
+    expect(content).toContain('exit "$prtokens_previous_status"');
+    expect(content).toContain('exit 0');
+  });
+
+  it('returns a failed result for an existing non-shell hook without modifying it', () => {
+    const existing = "#!/usr/bin/env node\nconsole.log('x')\n";
+    const { deps, files, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false, hookPath: '/custom/hooks/pre-push' });
+    expect(result.error).toMatch(/unsupported|non-shell/);
+    expect(files.get('/custom/hooks/pre-push')).toBe(existing);
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
   it('replaces only the managed block on rerun and then reports already up to date', () => {
     const oldHook = [
       '#!/bin/sh',

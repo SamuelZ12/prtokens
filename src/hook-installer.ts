@@ -220,6 +220,18 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       error: errorMessage(error),
     };
   }
+  if (currentHookBody !== undefined && !isShellCompatibleHook(currentHookBody)) {
+    return {
+      ok: false,
+      dryRun,
+      hooksDir,
+      hookPath,
+      hookBody: currentHookBody,
+      hookAction: 'appended-to-existing-hook',
+      coreHooksPathAction,
+      error: 'Unsupported non-shell existing pre-push hook.',
+    };
+  }
   const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
   const resultBase = {
     dryRun,
@@ -287,6 +299,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
 function renderManagedBlock(prtokensBinPath: string): string {
   return [
     managedStart,
+    'prtokens_previous_status=$?',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
     'stdin_file="$(mktemp)"',
     'cat > "$stdin_file"',
@@ -305,9 +318,28 @@ function renderManagedBlock(prtokensBinPath: string): string {
     'rm -f "$stdin_file"',
     `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
     '"$prtokens_bin" >/dev/null 2>&1 </dev/null &',
+    'if [ "$prtokens_previous_status" -ne 0 ]; then',
+    '  exit "$prtokens_previous_status"',
+    'fi',
     'exit 0',
     managedEnd,
   ].join('\n');
+}
+
+function isShellCompatibleHook(hookBody: string): boolean {
+  if (!hookBody.startsWith('#!')) {
+    return true;
+  }
+
+  const [shebang = ''] = hookBody.split('\n', 1);
+  const parts = shebang.slice(2).trim().split(/\s+/);
+  const command = parts[0] ?? '';
+
+  if (command.endsWith('/env')) {
+    return parts[1] === 'sh' || parts[1] === 'bash';
+  }
+
+  return command.endsWith('/sh') || command.endsWith('/bash');
 }
 
 function runCommandSafely(deps: HookInstallerDeps, cmd: string, args: string[]): CommandResult {
