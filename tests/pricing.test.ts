@@ -386,6 +386,35 @@ describe('priceAttributionResult', () => {
     expect(priced.totalCostUsd).toBeCloseTo(6.3125, 10);
   });
 
+  it('keeps remaining cache writes flat when only source totals have duration fields', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        buckets: [
+          bucket({
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheWriteTokens: 2_000_000,
+            cacheReadTokens: 0,
+            models: ['claude-sonnet-4-6'],
+            sourceCostUsd: 2,
+            sourceCostTokenTotals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheWriteTokens: 1_000_000,
+              cacheWrite5mTokens: 250_000,
+              cacheWrite1hTokens: 750_000,
+              cacheReadTokens: 0,
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(priced.buckets[0].costUsd).toBeCloseTo(5.75, 10);
+    expect(priced.buckets[0].warning).toBeUndefined();
+    expect(priced.totalCostUsd).toBeCloseTo(5.75, 10);
+  });
+
   it('deduplicates aggregate warnings', () => {
     const priced = priceAttributionResult(
       attributionResult({

@@ -204,11 +204,11 @@ function subtractOptionalTokens(
   total: PriceableTokens,
   covered: PriceableTokens,
 ): Partial<Pick<PriceableTokens, 'cacheWrite5mTokens' | 'cacheWrite1hTokens'>> {
-  if (total[key] === undefined && covered[key] === undefined) {
+  if (total[key] === undefined) {
     return {};
   }
 
-  const remaining = Math.max(0, (total[key] ?? 0) - (covered[key] ?? 0));
+  const remaining = Math.max(0, total[key] - (covered[key] ?? 0));
   return key === 'cacheWrite5mTokens' ? { cacheWrite5mTokens: remaining } : { cacheWrite1hTokens: remaining };
 }
 
