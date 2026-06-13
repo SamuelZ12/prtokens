@@ -67,6 +67,35 @@ describe('bundled pricing coverage', () => {
   });
 });
 
+describe('OpenAI pricing coverage', () => {
+  it.each(['gpt-5.4', 'gpt-5.5', 'gpt-5.4-fast', 'gpt-5.5-fast'])(
+    'prices %s from the bundled snapshot',
+    (model) => {
+      const price = estimateUsageCost(
+        usageEvent({
+          model,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheWriteTokens: 1_000_000,
+          cacheReadTokens: 1_000_000,
+        }),
+      );
+
+      expect(price.warning).toBeUndefined();
+      expect(price.costUsd).toBeGreaterThan(0);
+    },
+  );
+
+  it('does not charge OpenAI cache writes when LiteLLM omits a cache write rate', () => {
+    const withCacheWrites = estimateUsageCost(
+      usageEvent({ model: 'gpt-5.5', inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000, cacheReadTokens: 0 }),
+    );
+
+    expect(withCacheWrites.warning).toBeUndefined();
+    expect(withCacheWrites.costUsd).toBe(0);
+  });
+});
+
 describe('priceAttributionResult', () => {
   it('adds per-bucket and total dollar estimates', () => {
     const result: AttributionResult = {
