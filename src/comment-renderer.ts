@@ -236,7 +236,7 @@ function htmlCommentSafeJson(value: AuthorSummary): string {
 function renderSummaryLine(summary: AuthorSummary): string {
   return `${formatTokens(summary.inputTokens)} in / ${formatTokens(summary.outputTokens)} out \u00b7 ${formatSessions(
     summary.sessionCount,
-  )} \u00b7 ${summary.attributedPercent}% attributed \u00b7 ${summary.lowConfidencePercent}% low confidence`;
+  )}`;
 }
 
 function renderModels(models: string[]): string {

@@ -62,9 +62,13 @@ describe('renderPrComment', () => {
 
     expect(body).toContain('<!-- prtokens:v1 -->');
     expect(body).toContain('🪙 **This PR cost ~$4.83 in tokens**');
-    expect(body).toContain('2.1M in / 184k out');
-    expect(body).toContain('3 sessions');
-    expect(body).toContain('91% attributed');
+    expect(body).toContain('2.1M in / 184k out · 3 sessions');
+    expect(body).not.toContain('91% attributed');
+    expect(body).not.toContain('7% low confidence');
+    expect(JSON.parse(authorMarkerPayload(body, 'samuel'))).toMatchObject({
+      attributedPercent: 91,
+      lowConfidencePercent: 7,
+    });
     expect(body).toContain('<details>');
     expect(body).toContain('| Commit | Message | In | Out | Cost | Sessions |');
     expect(body).not.toContain('Cache Write');
