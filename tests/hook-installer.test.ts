@@ -69,6 +69,7 @@ describe('installGlobalPrePushHook', () => {
     expect(files.get(hookPath)).toContain('#!/bin/sh\n# >>> prtokens >>>');
     expect(files.get(hookPath)).toContain('# <<< prtokens <<<');
     expect(files.get(hookPath)).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
+    expect(files.get(hookPath)).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
     expect(commands).toEqual([
       { cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] },
@@ -184,9 +185,32 @@ describe('installGlobalPrePushHook', () => {
     });
     expect(result.hookBody).toContain('# >>> prtokens >>>');
     expect(result.hookBody).toContain("echo '/usr/local/bin/prtokens'");
+    expect(result.hookBody).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
     expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
+  });
+
+  it('returns a failed result and does not set core.hooksPath when chmod fails', () => {
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const hookPath = join(hooksDir, 'pre-push');
+    const { deps, commands } = createDeps({
+      commands: {
+        [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
+      },
+    });
+    vi.mocked(deps.fs.chmodSync).mockImplementation(() => {
+      throw new Error('chmod denied');
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({
+      ok: false,
+      hookPath,
+      error: 'chmod denied',
+    });
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
   });
 
