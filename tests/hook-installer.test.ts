@@ -82,7 +82,9 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('if ! cat > "$stdin_file"; then');
     expect(hookContent).toContain('rm -f "$stdin_file"');
     expect(hookContent).toContain('exit 1');
-    expect(hookContent).toContain('git rev-parse --absolute-git-dir');
+    expect(hookContent).toContain('repo_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"');
+    expect(hookContent).toContain('repo_hook="${repo_common_dir:+$repo_common_dir/hooks/pre-push}"');
+    expect(hookContent).not.toContain('$repo_git_dir/hooks/pre-push');
     expect(hookContent).toContain('current_hook="$0"');
     expect(hookContent).toContain('repo_hook_path="$repo_hook"');
     expect(hookContent).toContain('realpath "$repo_hook"');
@@ -525,6 +527,36 @@ describe('installGlobalPrePushHook', () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('generated hook invokes common repo hook from a linked worktree', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prtokens-hook-'));
+    try {
+      const repoDir = join(tempDir, 'repo');
+      const worktreeDir = join(tempDir, 'worktree');
+      const globalHook = join(tempDir, 'global-pre-push');
+      const marker = join(tempDir, 'marker.txt');
+      mkdirSync(repoDir);
+      expect(spawnSync('git', ['init'], { cwd: repoDir, encoding: 'utf8' }).status).toBe(0);
+      writeFileSync(join(repoDir, 'file.txt'), 'base\n');
+      expect(spawnSync('git', ['add', 'file.txt'], { cwd: repoDir, encoding: 'utf8' }).status).toBe(0);
+      expect(spawnSync('git', ['commit', '-m', 'base'], { cwd: repoDir, env: gitTestEnv(), encoding: 'utf8' }).status).toBe(0);
+      expect(spawnSync('git', ['worktree', 'add', worktreeDir], { cwd: repoDir, encoding: 'utf8' }).status).toBe(0);
+
+      const repoHook = join(repoDir, '.git', 'hooks', 'pre-push');
+      writeFileSync(repoHook, `#!/bin/sh\nprintf 'ran\\n' >> ${shellQuote(marker)}\nexit 0\n`);
+      chmodSync(repoHook, 0o755);
+      writeFileSync(globalHook, generatedHookBody());
+      chmodSync(globalHook, 0o755);
+
+      const result = spawnSync(globalHook, [], { cwd: worktreeDir, env: hookExecutionEnv(), input: 'refs\n', encoding: 'utf8', timeout: 2000 });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(readFileSync(marker, 'utf8')).toBe('ran\n');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function generatedHookBody(): string {
@@ -545,6 +577,16 @@ function shellQuote(value: string): string {
 
 function hookExecutionEnv(): NodeJS.ProcessEnv {
   return { PATH: '/bin:/usr/bin' };
+}
+
+function gitTestEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_AUTHOR_NAME: 'Test User',
+    GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test User',
+  };
 }
 
 describe('runPreflight', () => {
