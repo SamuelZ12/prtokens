@@ -288,14 +288,19 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
 
 function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: string): { hookBody: string; hookAction: HookAction } {
   if (currentHookBody === undefined) {
-    const managedBlock = renderManagedBlock(prtokensBinPath, true);
+    const managedBlock = renderManagedBlock(prtokensBinPath, true, true);
 
     return { hookBody: `#!/bin/sh\n${managedBlock}\n`, hookAction: 'installed' };
   }
 
   const managedBlockPattern = createManagedBlockPattern();
   if (managedBlockPattern.test(currentHookBody)) {
-    const managedBlock = renderManagedBlock(prtokensBinPath, trailingContentAfterManagedBlock(currentHookBody).trim() === '');
+    const prefix = contentBeforeManagedBlock(currentHookBody) ?? '';
+    const managedBlock = renderManagedBlock(
+      prtokensBinPath,
+      trailingContentAfterManagedBlock(currentHookBody).trim() === '',
+      !hasMeaningfulShellContent(prefix),
+    );
     const hookBody = currentHookBody.replace(managedBlockPattern, managedBlock);
 
     return {
@@ -305,7 +310,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   }
 
   const separator = currentHookBody.endsWith('\n') ? '' : '\n';
-  const managedBlock = renderManagedBlock(prtokensBinPath, true);
+  const managedBlock = renderManagedBlock(prtokensBinPath, true, !hasMeaningfulShellContent(currentHookBody));
 
   return {
     hookBody: `${currentHookBody}${separator}${managedBlock}\n`,
@@ -334,12 +339,29 @@ function terminalLastCommand(hookBody: string): 'exit' | 'exec' | undefined {
     return undefined;
   }
 
-  const match = /(?:^|(?:;|&&|&|\|\||\|)\s*)(exit|exec)(?=$|\s|;|&&|&|\|\||\|)/.exec(lastMeaningfulLine);
+  const matches = lastMeaningfulLine.matchAll(/(^|;|&&|&|\|)\s*(exit|exec)(?=$|\s|;|&&|&|\|\||\|)/g);
+  for (const match of matches) {
+    const separator = match[1] ?? '';
+    const index = match.index ?? 0;
+    if (separator === '|' && lastMeaningfulLine[index - 1] === '|') {
+      continue;
+    }
 
-  return match?.[1] as 'exit' | 'exec' | undefined;
+    return match[2] as 'exit' | 'exec';
+  }
+
+  return undefined;
 }
 
-function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean): string {
+function hasMeaningfulShellContent(hookBody: string): boolean {
+  return hookBody.split('\n').some((line, index) => {
+    const trimmed = line.trim();
+
+    return trimmed !== '' && !trimmed.startsWith('#') && !(index === 0 && trimmed.startsWith('#!'));
+  });
+}
+
+function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, includeRepoLocalForwarding: boolean): string {
   const lines = [
     managedStart,
     'prtokens_previous_status=$?',
@@ -347,36 +369,44 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean):
     '  exit "$prtokens_previous_status"',
     'fi',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
-    'stdin_file="$(mktemp)" || exit 1',
-    'if ! cat > "$stdin_file"; then',
-    '  rm -f "$stdin_file"',
-    '  exit 1',
-    'fi',
-    '',
-    'repo_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"',
-    'repo_hook="${repo_common_dir:+$repo_common_dir/hooks/pre-push}"',
-    'current_hook="$0"',
-    'repo_hook_path="$repo_hook"',
-    'if command -v realpath >/dev/null 2>&1; then',
-    '  current_hook="$(realpath "$current_hook" 2>/dev/null || printf \'%s\\n\' "$current_hook")"',
-    '  repo_hook_path="$(realpath "$repo_hook" 2>/dev/null || printf \'%s\\n\' "$repo_hook")"',
-    'fi',
-    'if [ -n "$repo_hook" ] && [ -x "$repo_hook" ] && [ "$repo_hook_path" != "$current_hook" ]; then',
-    '  if "$repo_hook" "$@" < "$stdin_file"; then',
-    '    status=0',
-    '  else',
-    '    status=$?',
-    '  fi',
-    '  if [ "$status" -ne 0 ]; then',
-    '    rm -f "$stdin_file"',
-    '    exit "$status"',
-    '  fi',
-    'fi',
-    '',
-    'rm -f "$stdin_file"',
+  ];
+
+  if (includeRepoLocalForwarding) {
+    lines.push(
+      'stdin_file="$(mktemp)" || exit 1',
+      'if ! cat > "$stdin_file"; then',
+      '  rm -f "$stdin_file"',
+      '  exit 1',
+      'fi',
+      '',
+      'repo_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"',
+      'repo_hook="${repo_common_dir:+$repo_common_dir/hooks/pre-push}"',
+      'current_hook="$0"',
+      'repo_hook_path="$repo_hook"',
+      'if command -v realpath >/dev/null 2>&1; then',
+      '  current_hook="$(realpath "$current_hook" 2>/dev/null || printf \'%s\\n\' "$current_hook")"',
+      '  repo_hook_path="$(realpath "$repo_hook" 2>/dev/null || printf \'%s\\n\' "$repo_hook")"',
+      'fi',
+      'if [ -n "$repo_hook" ] && [ -x "$repo_hook" ] && [ "$repo_hook_path" != "$current_hook" ]; then',
+      '  if "$repo_hook" "$@" < "$stdin_file"; then',
+      '    status=0',
+      '  else',
+      '    status=$?',
+      '  fi',
+      '  if [ "$status" -ne 0 ]; then',
+      '    rm -f "$stdin_file"',
+      '    exit "$status"',
+      '  fi',
+      'fi',
+      '',
+      'rm -f "$stdin_file"',
+    );
+  }
+
+  lines.push(
     `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
     '"$prtokens_bin" >/dev/null 2>&1 </dev/null &',
-  ];
+  );
 
   if (includeFinalExit) {
     lines.push('exit 0');

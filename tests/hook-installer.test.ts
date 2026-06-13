@@ -310,6 +310,11 @@ describe('installGlobalPrePushHook', () => {
     expect(result.hookAction).toBe('appended-to-existing-hook');
     expect(content.startsWith(existing)).toBe(true);
     expect(content).toContain('# >>> prtokens >>>');
+    expect(content).toContain('prtokens_previous_status=$?');
+    expect(content).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
+    expect(content).not.toContain('stdin_file=');
+    expect(content).not.toContain('repo_common_dir=');
+    expect(content).not.toContain('"$repo_hook" "$@"');
     expect(content.match(/^#!\/bin\/sh/gm)).toHaveLength(1);
   });
 
@@ -333,10 +338,7 @@ describe('installGlobalPrePushHook', () => {
     expect(content).toContain('exit 0');
     const previousStatusIndex = content.indexOf('prtokens_previous_status=$?');
     const previousStatusExitIndex = content.indexOf('exit "$prtokens_previous_status"');
-    const stdinCaptureIndex = content.indexOf('stdin_file="$(mktemp)"');
     const backgroundLaunchIndex = content.indexOf('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
-    expect(previousStatusIndex).toBeLessThan(stdinCaptureIndex);
-    expect(previousStatusExitIndex).toBeLessThan(stdinCaptureIndex);
     expect(previousStatusExitIndex).toBeLessThan(backgroundLaunchIndex);
   });
 
@@ -390,6 +392,27 @@ describe('installGlobalPrePushHook', () => {
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
+  it.each(['npm test || exit 1', 'npm test || exec ./fallback'])(
+    'allows appending after reachable guard command %s',
+    (guardCommand) => {
+      const existing = `#!/bin/sh\n${guardCommand}\n`;
+      const { deps, files, commands } = createDeps({
+        commands: {
+          'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+        },
+        files: {
+          '/custom/hooks/pre-push': existing,
+        },
+      });
+
+      const result = installGlobalPrePushHook(deps);
+
+      expect(result.hookAction).toBe('appended-to-existing-hook');
+      expect(files.get('/custom/hooks/pre-push')).toContain('# >>> prtokens >>>');
+      expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+    },
+  );
+
   it.each(['echo done; exit 0', 'cleanup & exit 0'])(
     'returns a failed result for an existing managed block after terminal prefix %s',
     (terminalCommand) => {
@@ -420,6 +443,63 @@ describe('installGlobalPrePushHook', () => {
       expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
     },
   );
+
+  it('updates an existing managed block after a foreign prefix without repo-local forwarding', () => {
+    const existing = [
+      '#!/bin/sh',
+      'echo foreign',
+      '# >>> prtokens >>>',
+      'old managed content',
+      '# <<< prtokens <<<',
+      '',
+    ].join('\n');
+    const { deps, files } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    const content = files.get('/custom/hooks/pre-push') ?? '';
+    expect(result.hookAction).toBe('updated-existing-block');
+    expect(content).toContain('prtokens_previous_status=$?');
+    expect(content).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
+    expect(content).not.toContain('stdin_file=');
+    expect(content).not.toContain('repo_common_dir=');
+    expect(content).not.toContain('"$repo_hook" "$@"');
+  });
+
+  it('updates an owned managed block with repo-local forwarding', () => {
+    const existing = [
+      '#!/bin/sh',
+      '# prtokens managed hook',
+      '',
+      '# >>> prtokens >>>',
+      'old managed content',
+      '# <<< prtokens <<<',
+      '',
+    ].join('\n');
+    const { deps, files } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    const content = files.get('/custom/hooks/pre-push') ?? '';
+    expect(result.hookAction).toBe('updated-existing-block');
+    expect(content).toContain('stdin_file="$(mktemp)"');
+    expect(content).toContain('repo_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"');
+    expect(content).toContain('"$repo_hook" "$@" < "$stdin_file"');
+  });
 
   it('returns a failed result for an existing non-shell hook without modifying it', () => {
     const existing = "#!/usr/bin/env node\nconsole.log('x')\n";
