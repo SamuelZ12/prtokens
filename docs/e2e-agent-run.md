@@ -1,1 +1,2 @@
 - Claude Code agent run: verified transcript capture.
+- Codex agent run: verified rollout capture.
