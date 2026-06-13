@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 - 2026-06-13
+
+### Fixed
+
+- Exclude pre-PR history and uncommitted tail usage from PR token totals.
+- Hide attribution diagnostics from generated PR comments.
+- Prioritize source-reported costs in PR comment summaries.
+- Harden generated pre-push hook installation and execution behavior.
+- Price flat-rate cache usage when cache duration is not fully covered.
+
 ## 0.3.0 - 2026-06-13
 
 ### Added
