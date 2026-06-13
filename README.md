@@ -47,8 +47,9 @@ cat > ~/.config/git/hooks/pre-push <<'EOF'
 stdin_file="$(mktemp)"
 cat > "$stdin_file"
 
-repo_hook="$GIT_DIR/hooks/pre-push"
-if [ -x "$repo_hook" ]; then
+repo_git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+repo_hook="${repo_git_dir:+$repo_git_dir/hooks/pre-push}"
+if [ -n "$repo_hook" ] && [ -x "$repo_hook" ]; then
   "$repo_hook" "$@" < "$stdin_file"
   status=$?
   if [ "$status" -ne 0 ]; then
