@@ -57,9 +57,9 @@ First check whether you already have a global hooks path:
 git config --global --path --get core.hooksPath
 ```
 
-If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a shell `pre-push` file already exists, append the managed block below to the end of that file. Do not place it before commands that still need to run, because the block may end with `exit 0`.
+If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a shell `pre-push` file already exists, prefer appending the managed block below to the end of that file. Keep the block after any logic that needs original `pre-push` stdin, because the block captures stdin with `cat > "$stdin_file"`. If you manually place it before trailing commands, those commands must not depend on stdin unless you adapt the hook to replay `"$stdin_file"` to them.
 
-If replacing an existing `# >>> prtokens >>>` / `# <<< prtokens <<<` managed block and the hook has trailing commands after it, prefer `prtokens init --dry-run` to preview the exact replacement before running `prtokens init`. Only omit the final `exit 0` manually if you intentionally place the block before trailing hook logic.
+If replacing an existing `# >>> prtokens >>>` / `# <<< prtokens <<<` managed block and the hook has trailing commands after it, prefer `prtokens init --dry-run` to preview the exact replacement before running `prtokens init`. Be careful around an existing terminal `exit 0`: to run prtokens, the block must be reachable, but moving it earlier must not bypass failure handling or stdin-consuming logic.
 
 If it prints nothing, create a global hooks directory and configure Git to use it:
 
@@ -122,7 +122,7 @@ chmod +x "$(git config --global --path --get core.hooksPath)/pre-push"
 
 </details>
 
-Caveats: `prtokens` must be on `PATH` for Git hooks; `pre-push` may not observe newly pushed commits immediately, especially on first pushes or PR creation; repositories with a local `core.hooksPath` bypass the global hook; `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
+Caveats: `prtokens` must be on `PATH` for Git hooks, or the generated absolute fallback path from `prtokens init` / `--dry-run` must remain valid; `pre-push` may not observe newly pushed commits immediately, especially on first pushes or PR creation; repositories with a local `core.hooksPath` bypass the global hook; `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
 
 ## Exit Behavior
 
