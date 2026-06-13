@@ -45,7 +45,7 @@ Preview the changes without writing files:
 prtokens init --dry-run
 ```
 
-`prtokens init` installs or updates a sentinel-wrapped managed block in the global `pre-push` hook. If a global `core.hooksPath` is already configured, prtokens respects it and writes the hook there. If it is unset, prtokens creates `~/.config/git/hooks/pre-push` and sets `core.hooksPath` to `~/.config/git/hooks`.
+`prtokens init` installs or updates a sentinel-wrapped managed block in the global `pre-push` hook. If an absolute global `core.hooksPath` is already configured, prtokens respects it and writes the hook there. If it is unset, prtokens creates `~/.config/git/hooks/pre-push` and sets `core.hooksPath` to `~/.config/git/hooks`. If your existing global `core.hooksPath` is relative, `prtokens init` fails safely instead of writing to a path relative to the current directory. Set an absolute global hooks path or use manual setup for that configuration.
 
 Setup checks for Node.js 22.13+, GitHub CLI, and `gh auth login` are informational. The hook still installs so you can fix prerequisites later.
 
@@ -57,7 +57,9 @@ First check whether you already have a global hooks path:
 git config --global --path --get core.hooksPath
 ```
 
-If this prints a path, place or merge the `pre-push` hook into that existing directory. Do not overwrite existing hooks. If a shell `pre-push` file already exists, prefer appending the managed block below to the end of that file. Keep the block after any logic that needs original `pre-push` stdin, because the block captures stdin with `cat > "$stdin_file"`. If you manually place it before trailing commands, those commands must not depend on stdin unless you adapt the hook to replay `"$stdin_file"` to them.
+If this prints an absolute path, use that path as the target hooks directory and place or merge the `pre-push` hook there. Do not overwrite existing hooks. If a shell `pre-push` file already exists, prefer appending the managed block below to the end of that file. Keep the block after any logic that needs original `pre-push` stdin, because the block captures stdin with `cat > "$stdin_file"`. If you manually place it before trailing commands, those commands must not depend on stdin unless you adapt the hook to replay `"$stdin_file"` to them.
+
+If this prints a relative path, it is resolved by Git relative to each repository. `prtokens init` rejects that configuration because it cannot safely update one global hook file for all repositories. Set an absolute global hooks path or manually install the block in the repository-specific hook locations you intend to use.
 
 If replacing an existing `# >>> prtokens >>>` / `# <<< prtokens <<<` managed block and the hook has trailing commands after it, prefer `prtokens init --dry-run` to preview the exact replacement before running `prtokens init`. Be careful around an existing terminal `exit 0`: to run prtokens, the block must be reachable, but moving it earlier must not bypass failure handling or stdin-consuming logic.
 
