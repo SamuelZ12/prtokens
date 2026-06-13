@@ -1,6 +1,6 @@
 # prtokens
 
-Attribute Claude Code token usage to the GitHub pull request that shipped it.
+Attribute coding-agent token usage to the GitHub pull request that shipped it.
 
 ## Usage
 
@@ -12,19 +12,54 @@ npx prtokens --pr 123
 npx prtokens --verbose
 ```
 
+`--verbose` prints per-source reader diagnostics. `--json` includes the rendered markdown, attribution result, pricing result, per-agent totals, and per-source diagnostics.
+
 ## What It Posts
 
 `prtokens` posts or updates one PR comment containing aggregate token counts, estimated API-rate dollar cost, session count, model names, attribution coverage, and a per-commit table.
 
 ## Privacy
 
-Claude Code transcripts never leave your machine. The GitHub comment contains aggregate numbers only: token counts, dollar estimates, session counts, model names, coverage, and commit metadata already visible in the PR.
+Claude Code transcripts, Codex rollouts, and OpenCode databases never leave your machine. The GitHub comment contains aggregate numbers only: token counts, dollar estimates, session counts, model names, agent names, coverage, and commit metadata already visible in the PR.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22.13+
 - GitHub CLI authenticated with `gh auth login`
-- Claude Code local transcripts under `~/.claude/projects`
+- Claude Code transcripts under `~/.claude/projects` when using Claude Code
+- Codex sessions under `~/.codex/sessions` or `~/.codex/archived_sessions` when using Codex
+- OpenCode SQLite databases under `~/.local/share/opencode` when using OpenCode
+
+## Optional Global Pre-Push Hook
+
+To run `prtokens` after every `git push` on this machine, install a global `pre-push` hook:
+
+```sh
+mkdir -p ~/.config/git/hooks
+cat > ~/.config/git/hooks/pre-push <<'EOF'
+#!/bin/sh
+stdin_file="$(mktemp)"
+cat > "$stdin_file"
+
+repo_hook="$GIT_DIR/hooks/pre-push"
+if [ -x "$repo_hook" ]; then
+  "$repo_hook" "$@" < "$stdin_file"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    rm -f "$stdin_file"
+    exit "$status"
+  fi
+fi
+
+rm -f "$stdin_file"
+prtokens >/dev/null 2>&1 </dev/null &
+exit 0
+EOF
+chmod +x ~/.config/git/hooks/pre-push
+git config --global core.hooksPath ~/.config/git/hooks
+```
+
+Repositories with a local `core.hooksPath` bypass the global hook. `gh pr create` on an already-pushed branch performs no push, so it will not trigger this hook.
 
 ## Exit Behavior
 
