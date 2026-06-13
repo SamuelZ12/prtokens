@@ -76,6 +76,26 @@ describe('installGlobalPrePushHook', () => {
     ]);
   });
 
+  it('returns a failed result when core.hooksPath cannot be configured', () => {
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const hookPath = join(hooksDir, 'pre-push');
+    const { deps } = createDeps({
+      commands: {
+        [`git config --global core.hooksPath ${hooksDir}`]: { stdout: 'permission denied\n', status: 1 },
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({
+      ok: false,
+      hookPath,
+      coreHooksPathAction: 'set',
+    });
+    expect(result.hookAction).not.toBe('installed');
+    expect(result.error).toContain('core.hooksPath');
+  });
+
   it('respects an existing global core.hooksPath without changing git config', () => {
     const { deps, files, commands } = createDeps({
       commands: {
