@@ -78,8 +78,10 @@ describe('installGlobalPrePushHook', () => {
     const hookContent = files.get(hookPath) ?? '';
     expect(hookContent).toContain('#!/bin/sh\n# >>> prtokens >>>');
     expect(hookContent).toContain('# <<< prtokens <<<');
-    expect(hookContent).toContain('stdin_file="$(mktemp)"');
-    expect(hookContent).toContain('cat > "$stdin_file"');
+    expect(hookContent).toContain('stdin_file="$(mktemp)" || exit 1');
+    expect(hookContent).toContain('if ! cat > "$stdin_file"; then');
+    expect(hookContent).toContain('rm -f "$stdin_file"');
+    expect(hookContent).toContain('exit 1');
     expect(hookContent).toContain('git rev-parse --absolute-git-dir');
     expect(hookContent).toContain('current_hook="$0"');
     expect(hookContent).toContain('repo_hook_path="$repo_hook"');
@@ -383,6 +385,7 @@ describe('installGlobalPrePushHook', () => {
     expect(first.hookAction).toBe('updated-existing-block');
     expect(afterFirst).toContain('echo before\n# >>> prtokens >>>');
     expect(afterFirst).toContain('# <<< prtokens <<<\necho after');
+    expect(afterFirst).not.toContain('exit 0\n# <<< prtokens <<<\necho after');
     expect(afterFirst).not.toContain('old managed content');
     expect(second.hookAction).toBe('already-up-to-date');
     expect(files.get('/custom/hooks/pre-push')).toBe(afterFirst);
@@ -493,7 +496,7 @@ describe('installGlobalPrePushHook', () => {
       writeFileSync(globalHook, generatedHookBody());
       chmodSync(globalHook, 0o755);
 
-      const result = spawnSync(globalHook, [], { cwd: repoDir, input: 'refs\n', encoding: 'utf8', timeout: 2000 });
+      const result = spawnSync(globalHook, [], { cwd: repoDir, env: hookExecutionEnv(), input: 'refs\n', encoding: 'utf8', timeout: 2000 });
 
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
@@ -514,7 +517,7 @@ describe('installGlobalPrePushHook', () => {
       writeFileSync(repoHook, generatedHookBody());
       chmodSync(repoHook, 0o755);
 
-      const result = spawnSync(repoHook, [], { cwd: repoDir, input: 'refs\n', encoding: 'utf8', timeout: 2000 });
+      const result = spawnSync(repoHook, [], { cwd: repoDir, env: hookExecutionEnv(), input: 'refs\n', encoding: 'utf8', timeout: 2000 });
 
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
@@ -538,6 +541,10 @@ function generatedHookBody(): string {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function hookExecutionEnv(): NodeJS.ProcessEnv {
+  return { PATH: '/bin:/usr/bin' };
 }
 
 describe('runPreflight', () => {

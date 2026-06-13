@@ -272,14 +272,15 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
 }
 
 function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: string): { hookBody: string; hookAction: HookAction } {
-  const managedBlock = renderManagedBlock(prtokensBinPath);
-
   if (currentHookBody === undefined) {
+    const managedBlock = renderManagedBlock(prtokensBinPath, true);
+
     return { hookBody: `#!/bin/sh\n${managedBlock}\n`, hookAction: 'installed' };
   }
 
   const managedBlockPattern = new RegExp(`${escapeRegExp(managedStart)}[\\s\\S]*?${escapeRegExp(managedEnd)}`);
   if (managedBlockPattern.test(currentHookBody)) {
+    const managedBlock = renderManagedBlock(prtokensBinPath, trailingContentAfterManagedBlock(currentHookBody).trim() === '');
     const hookBody = currentHookBody.replace(managedBlockPattern, managedBlock);
 
     return {
@@ -289,6 +290,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   }
 
   const separator = currentHookBody.endsWith('\n') ? '' : '\n';
+  const managedBlock = renderManagedBlock(prtokensBinPath, true);
 
   return {
     hookBody: `${currentHookBody}${separator}${managedBlock}\n`,
@@ -296,16 +298,19 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   };
 }
 
-function renderManagedBlock(prtokensBinPath: string): string {
-  return [
+function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean): string {
+  const lines = [
     managedStart,
     'prtokens_previous_status=$?',
     'if [ "$prtokens_previous_status" -ne 0 ]; then',
     '  exit "$prtokens_previous_status"',
     'fi',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
-    'stdin_file="$(mktemp)"',
-    'cat > "$stdin_file"',
+    'stdin_file="$(mktemp)" || exit 1',
+    'if ! cat > "$stdin_file"; then',
+    '  rm -f "$stdin_file"',
+    '  exit 1',
+    'fi',
     '',
     'repo_git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"',
     'repo_hook="${repo_git_dir:+$repo_git_dir/hooks/pre-push}"',
@@ -330,9 +335,22 @@ function renderManagedBlock(prtokensBinPath: string): string {
     'rm -f "$stdin_file"',
     `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
     '"$prtokens_bin" >/dev/null 2>&1 </dev/null &',
-    'exit 0',
-    managedEnd,
-  ].join('\n');
+  ];
+
+  if (includeFinalExit) {
+    lines.push('exit 0');
+  }
+
+  lines.push(managedEnd);
+
+  return lines.join('\n');
+}
+
+function trailingContentAfterManagedBlock(hookBody: string): string {
+  const startIndex = hookBody.indexOf(managedStart);
+  const endIndex = startIndex === -1 ? -1 : hookBody.indexOf(managedEnd, startIndex);
+
+  return endIndex === -1 ? '' : hookBody.slice(endIndex + managedEnd.length);
 }
 
 function isShellCompatibleHook(hookBody: string): boolean {
