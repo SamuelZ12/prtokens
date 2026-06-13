@@ -186,6 +186,32 @@ function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidenc
   modelTotals.cacheWriteTokens += event.cacheWriteTokens;
   modelTotals.cacheReadTokens += event.cacheReadTokens;
 
+  if (event.sourceCostUsd !== undefined) {
+    bucket.sourceCostUsd = (bucket.sourceCostUsd ?? 0) + event.sourceCostUsd;
+    const sourceTotals = (bucket.sourceCostTokenTotals ??= {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+    });
+    sourceTotals.inputTokens += event.inputTokens;
+    sourceTotals.outputTokens += event.outputTokens;
+    sourceTotals.cacheWriteTokens += event.cacheWriteTokens;
+    sourceTotals.cacheReadTokens += event.cacheReadTokens;
+
+    const sourceModelTotals = (bucket.sourceCostModelTokenTotals ??= {});
+    const sourceModelTotal = (sourceModelTotals[event.model] ??= {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+    });
+    sourceModelTotal.inputTokens += event.inputTokens;
+    sourceModelTotal.outputTokens += event.outputTokens;
+    sourceModelTotal.cacheWriteTokens += event.cacheWriteTokens;
+    sourceModelTotal.cacheReadTokens += event.cacheReadTokens;
+  }
+
   if (!bucket.modelNames.has(event.model)) {
     bucket.modelNames.add(event.model);
     bucket.models.push(event.model);

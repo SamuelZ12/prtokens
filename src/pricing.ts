@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { AttributionBucket, AttributionResult, UsageEvent } from './types.js';
+import type { AttributionBucket, AttributionResult, ModelTokenTotals, UsageEvent } from './types.js';
 
 interface PricingRates {
   inputUsdPerMillion: number;
@@ -18,7 +18,7 @@ interface PriceableTokens {
 export interface UsageCostEstimate {
   costUsd: number;
   pricedTokens: PriceableTokens;
-  label?: 'estimated at API rates';
+  label?: 'estimated at API rates' | 'source reported';
   warning?: string;
 }
 
@@ -44,6 +44,14 @@ const codexFastModeMultipliers: Record<string, number> = {
 };
 
 export function estimateUsageCost(event: UsageEvent): UsageCostEstimate {
+  if (event.sourceCostUsd !== undefined) {
+    return {
+      costUsd: event.sourceCostUsd,
+      pricedTokens: priceableTokens(event),
+      label: 'source reported',
+    };
+  }
+
   return estimateTokenCost(event.model, event);
 }
 
@@ -82,26 +90,40 @@ function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
     };
   }
 
-  if (sortedModels.length > 1) {
-    const perModelEstimate = estimateModelTokenTotals(bucket, sortedModels);
-    if (perModelEstimate !== undefined) {
+  if (bucket.sourceCostUsd !== undefined) {
+    if (bucket.sourceCostTokenTotals === undefined) {
       return {
         ...bucket,
-        costUsd: perModelEstimate.costUsd,
+        costUsd: bucket.sourceCostUsd,
         pricingModel,
-        ...(perModelEstimate.warning === undefined ? {} : { warning: perModelEstimate.warning }),
+        warning: 'Cannot estimate remaining tokens for source-priced bucket without source token totals.',
       };
     }
 
+    const remainingTokens = subtractTokens(bucket, bucket.sourceCostTokenTotals);
+    if (isZeroTokens(remainingTokens)) {
+      return {
+        ...bucket,
+        costUsd: bucket.sourceCostUsd,
+        pricingModel,
+      };
+    }
+
+    const estimate = estimateBucketTokenCost(
+      sortedModels,
+      remainingTokens,
+      subtractModelTokenTotals(bucket.modelTokenTotals, bucket.sourceCostModelTokenTotals),
+    );
+
     return {
       ...bucket,
-      costUsd: 0,
+      costUsd: bucket.sourceCostUsd + estimate.costUsd,
       pricingModel,
-      warning: `Cannot price mixed-model bucket (${sortedModels.join(', ')}) without per-model token totals.`,
+      ...(estimate.warning === undefined ? {} : { warning: estimate.warning }),
     };
   }
 
-  const estimate = estimateTokenCost(pricingModel, bucket);
+  const estimate = estimateBucketTokenCost(sortedModels, bucket, bucket.modelTokenTotals);
 
   return {
     ...bucket,
@@ -111,21 +133,82 @@ function priceBucket(bucket: AttributionBucket): PricedAttributionBucket {
   };
 }
 
+function estimateBucketTokenCost(
+  sortedModels: string[],
+  tokens: PriceableTokens,
+  modelTokenTotals: ModelTokenTotals | undefined,
+): { costUsd: number; warning?: string } {
+  const pricingModel = sortedModels[0] ?? '';
+
+  if (sortedModels.length <= 1) {
+    return estimateTokenCost(pricingModel, tokens);
+  }
+
+  const perModelEstimate = estimateModelTokenTotals(modelTokenTotals, sortedModels);
+  if (perModelEstimate !== undefined) {
+    return perModelEstimate;
+  }
+
+  return {
+    costUsd: 0,
+    warning: `Cannot price mixed-model bucket (${sortedModels.join(', ')}) without per-model token totals.`,
+  };
+}
+
 function estimateModelTokenTotals(
-  bucket: AttributionBucket,
+  modelTokenTotals: ModelTokenTotals | undefined,
   sortedModels: string[],
 ): { costUsd: number; warning?: string } | undefined {
-  if (bucket.modelTokenTotals === undefined || sortedModels.some((model) => bucket.modelTokenTotals?.[model] === undefined)) {
+  if (modelTokenTotals === undefined || sortedModels.some((model) => modelTokenTotals[model] === undefined)) {
     return undefined;
   }
 
-  const estimates = sortedModels.map((model) => estimateTokenCost(model, bucket.modelTokenTotals![model]));
+  const estimates = sortedModels
+    .map((model) => ({ model, tokens: modelTokenTotals[model] }))
+    .filter(({ tokens }) => !isZeroTokens(tokens))
+    .map(({ model, tokens }) => estimateTokenCost(model, tokens));
   const warnings = [...new Set(estimates.flatMap((estimate) => (estimate.warning === undefined ? [] : [estimate.warning])))];
 
   return {
     costUsd: estimates.reduce((total, estimate) => total + estimate.costUsd, 0),
     ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
   };
+}
+
+function priceableTokens(tokens: PriceableTokens): PriceableTokens {
+  return {
+    inputTokens: tokens.inputTokens,
+    outputTokens: tokens.outputTokens,
+    cacheWriteTokens: tokens.cacheWriteTokens,
+    cacheReadTokens: tokens.cacheReadTokens,
+  };
+}
+
+function subtractTokens(total: PriceableTokens, covered: PriceableTokens): PriceableTokens {
+  return {
+    inputTokens: Math.max(0, total.inputTokens - covered.inputTokens),
+    outputTokens: Math.max(0, total.outputTokens - covered.outputTokens),
+    cacheWriteTokens: Math.max(0, total.cacheWriteTokens - covered.cacheWriteTokens),
+    cacheReadTokens: Math.max(0, total.cacheReadTokens - covered.cacheReadTokens),
+  };
+}
+
+function subtractModelTokenTotals(
+  total: ModelTokenTotals | undefined,
+  covered: ModelTokenTotals | undefined,
+): ModelTokenTotals | undefined {
+  if (total === undefined) {
+    return undefined;
+  }
+
+  const remaining: ModelTokenTotals = {};
+  for (const [model, tokens] of Object.entries(total)) {
+    remaining[model] = subtractTokens(
+      tokens,
+      covered?.[model] ?? { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 },
+    );
+  }
+  return remaining;
 }
 
 function isZeroTokens(tokens: PriceableTokens): boolean {
@@ -172,12 +255,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function estimateTokenCost(model: string, tokens: PriceableTokens): UsageCostEstimate {
-  const pricedTokens = {
-    inputTokens: tokens.inputTokens,
-    outputTokens: tokens.outputTokens,
-    cacheWriteTokens: tokens.cacheWriteTokens,
-    cacheReadTokens: tokens.cacheReadTokens,
-  };
+  const pricedTokens = priceableTokens(tokens);
   const rates = pricing[model];
 
   if (rates === undefined) {

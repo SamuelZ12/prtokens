@@ -228,6 +228,39 @@ describe('attributeUsageToCommits', () => {
     });
   });
 
+  it('aggregates source-reported costs and covered tokens into buckets', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      events: [
+        usageEvent({
+          id: 'priced-event',
+          gitBranch: 'main',
+          timestamp: '2026-06-12T10:30:00.000Z',
+          sourceCostUsd: 1.5,
+        }),
+      ],
+    });
+
+    expect(result.buckets[1]).toMatchObject({
+      sourceCostUsd: 1.5,
+      sourceCostTokenTotals: {
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheWriteTokens: 0,
+        cacheReadTokens: 0,
+      },
+      sourceCostModelTokenTotals: {
+        'claude-sonnet-4-6': {
+          inputTokens: 100,
+          outputTokens: 10,
+          cacheWriteTokens: 0,
+          cacheReadTokens: 0,
+        },
+      },
+    });
+  });
+
   it('counts same raw session id from different agents as separate sessions', () => {
     const result = attributeUsageToCommits({
       branch: 'main',
