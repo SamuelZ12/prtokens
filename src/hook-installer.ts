@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 export interface CommandResult {
   stdout: string;
+  stderr?: string;
   status: number;
 }
 
@@ -65,6 +66,7 @@ export function createDefaultHookInstallerDeps(prtokensBinPath: string): HookIns
 
       return {
         stdout: typeof result.stdout === 'string' ? result.stdout : '',
+        stderr: typeof result.stderr === 'string' ? result.stderr : '',
         status: result.status ?? 1,
       };
     },
@@ -151,7 +153,7 @@ export function runPreflight(deps: HookInstallerDeps): PreflightResult {
 
 export function installGlobalPrePushHook(deps: HookInstallerDeps, options: InstallOptions = {}): InstallResult {
   const dryRun = options.dryRun === true;
-  const configuredHooksPath = deps.runCommand('git', ['config', '--global', '--get', 'core.hooksPath']);
+  const configuredHooksPath = deps.runCommand('git', ['config', '--global', '--path', '--get', 'core.hooksPath']);
   const existingHooksDir = configuredHooksPath.status === 0 ? configuredHooksPath.stdout.trim() : '';
   const hasExistingHooksDir = existingHooksDir !== '';
   const hooksDir = hasExistingHooksDir ? existingHooksDir : join(deps.homedir(), '.config', 'git', 'hooks');
@@ -191,7 +193,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   if (!hasExistingHooksDir) {
     const configResult = deps.runCommand('git', ['config', '--global', 'core.hooksPath', hooksDir]);
     if (configResult.status !== 0) {
-      const detail = configResult.stdout.trim();
+      const detail = (configResult.stderr ?? configResult.stdout).trim() || configResult.stdout.trim();
       return {
         ok: false,
         ...resultBase,

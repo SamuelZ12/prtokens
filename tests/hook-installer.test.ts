@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { installGlobalPrePushHook, runPreflight, type HookInstallerDeps } from '../src/hook-installer.js';
+import { installGlobalPrePushHook, runPreflight, type CommandResult, type HookInstallerDeps } from '../src/hook-installer.js';
 
 type CommandCall = { cmd: string; args: string[] };
 
-function createDeps(overrides: Partial<HookInstallerDeps> & { files?: Record<string, string>; commands?: Record<string, { stdout: string; status: number }> } = {}) {
+function createDeps(overrides: Partial<HookInstallerDeps> & { files?: Record<string, string>; commands?: Record<string, CommandResult> } = {}) {
   const files = new Map(Object.entries(overrides.files ?? {}));
   const chmods: Array<{ path: string; mode: number }> = [];
   const mkdirs: Array<{ path: string; opts: { recursive: true } }> = [];
@@ -72,7 +72,7 @@ describe('installGlobalPrePushHook', () => {
     expect(files.get(hookPath)).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
     expect(commands).toEqual([
-      { cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] },
+      { cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] },
       { cmd: 'git', args: ['config', '--global', 'core.hooksPath', hooksDir] },
     ]);
   });
@@ -95,15 +95,30 @@ describe('installGlobalPrePushHook', () => {
     });
     expect(result.error).toContain('core.hooksPath');
     expect(commands).toEqual([
-      { cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] },
+      { cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] },
       { cmd: 'git', args: ['config', '--global', 'core.hooksPath', hooksDir] },
     ]);
+  });
+
+  it('surfaces stderr when core.hooksPath cannot be configured', () => {
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const { deps } = createDeps({
+      commands: {
+        [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', stderr: 'fatal: config file is locked\n', status: 1 },
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false, coreHooksPathAction: 'set' });
+    expect(result.error).toContain('core.hooksPath');
+    expect(result.error).toContain('fatal: config file is locked');
   });
 
   it('respects an existing global core.hooksPath without changing git config', () => {
     const { deps, files, commands } = createDeps({
       commands: {
-        'git config --global --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
       },
     });
 
@@ -117,14 +132,34 @@ describe('installGlobalPrePushHook', () => {
       coreHooksPathAction: 'respected',
     });
     expect(files.get('/custom/hooks/pre-push')).toContain('# >>> prtokens >>>');
-    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
+  it('uses the expanded core.hooksPath returned by git --path', () => {
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const { deps, files, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: `${hooksDir}\n`, status: 0 },
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({
+      ok: true,
+      hooksDir,
+      hookPath: `${hooksDir}/pre-push`,
+      coreHooksPathAction: 'respected',
+    });
+    expect(files.get(`${hooksDir}/pre-push`)).toContain('# >>> prtokens >>>');
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
   it('appends the managed block to a foreign existing hook without adding a second shebang', () => {
     const existing = '#!/bin/sh\necho foreign\n';
     const { deps, files } = createDeps({
       commands: {
-        'git config --global --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
       },
       files: {
         '/custom/hooks/pre-push': existing,
@@ -152,7 +187,7 @@ describe('installGlobalPrePushHook', () => {
     ].join('\n');
     const { deps, files } = createDeps({
       commands: {
-        'git config --global --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
       },
       files: {
         '/custom/hooks/pre-push': oldHook,
@@ -188,7 +223,7 @@ describe('installGlobalPrePushHook', () => {
     expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
-    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
   it('returns a failed result and does not set core.hooksPath when chmod fails', () => {
@@ -210,7 +245,7 @@ describe('installGlobalPrePushHook', () => {
       hookPath,
       error: 'chmod denied',
     });
-    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
   it('returns a failed result when the hook cannot be written', () => {
@@ -232,7 +267,7 @@ describe('installGlobalPrePushHook', () => {
       error: 'permission denied',
     });
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
-    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 });
 
