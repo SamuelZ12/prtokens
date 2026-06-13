@@ -83,11 +83,24 @@ describe('attributeUsageToCommits', () => {
     expect(result.buckets.map((bucket) => bucket.commitSha)).toEqual(['aaa1111', 'bbb2222']);
   });
 
-  it('puts usage before the first commit in a visible pre-first-commit bucket', () => {
+  it('attributes branch-matched usage before the first commit to the first commit', () => {
     const result = attributeUsageToCommits({
       branch: 'main',
       commits,
       events: [usageEvent({ gitBranch: 'main' })],
+    });
+
+    expect(result.preFirstCommit).toBeUndefined();
+    expect(result.buckets[0]).toMatchObject({ commitSha: 'aaa1111', eventCount: 1, inputTokens: 100, outputTokens: 10 });
+    expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0 });
+    expect(result.totals).toMatchObject({ inputTokens: 100, outputTokens: 10, attributedEventCount: 1 });
+  });
+
+  it('keeps branch-unknown usage before the first commit out of PR totals', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      events: [usageEvent()],
     });
 
     expect(result.preFirstCommit).toMatchObject({
@@ -99,6 +112,8 @@ describe('attributeUsageToCommits', () => {
     });
     expect(result.buckets[0]).toMatchObject({ commitSha: 'aaa1111', eventCount: 0, inputTokens: 0 });
     expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0 });
+    expect(result.totals).toMatchObject({ inputTokens: 0, outputTokens: 0, sessionCount: 0, attributedEventCount: 0 });
+    expect(result.coverage.attributedPercent).toBe(0);
   });
 
   it('sorts commits by authored time without mutating caller input', () => {

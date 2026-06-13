@@ -402,7 +402,6 @@ function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch:
 
 function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
   return [
-    ...(priced.preFirstCommit === undefined ? [] : [priced.preFirstCommit]),
     ...priced.buckets,
     ...(priced.uncommittedTail === undefined ? [] : [priced.uncommittedTail]),
   ];

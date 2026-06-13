@@ -29,6 +29,7 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
       buckets,
       commits,
       event,
+      lowConfidence,
       () => (preFirstCommit ??= createPreFirstCommitBucket()),
       () => (uncommittedTail ??= createTailBucket()),
     );
@@ -36,7 +37,6 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
   }
 
   const allBuckets = [
-    ...(preFirstCommit === undefined ? [] : [preFirstCommit]),
     ...buckets,
     ...(uncommittedTail === undefined ? [] : [uncommittedTail]),
   ];
@@ -154,6 +154,7 @@ function bucketForEvent(
   buckets: MutableBucket[],
   commits: CommitRecord[],
   event: UsageEvent,
+  lowConfidence: boolean,
   getPreFirstCommit: () => MutableBucket,
   getUncommittedTail: () => MutableBucket,
 ): MutableBucket {
@@ -161,6 +162,10 @@ function bucketForEvent(
   const firstCommitTime = commits[0] === undefined ? undefined : Date.parse(commits[0].authoredAt);
 
   if (firstCommitTime !== undefined && eventTime < firstCommitTime) {
+    if (!lowConfidence && buckets[0] !== undefined) {
+      return buckets[0];
+    }
+
     return getPreFirstCommit();
   }
 

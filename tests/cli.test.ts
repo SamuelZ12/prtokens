@@ -278,7 +278,8 @@ describe('runCli', () => {
     expect(payload.diagnostics.codex.scannedFileCount).toBe(1);
     expect(payload.markdown).toContain('<!-- prtokens:v1 -->');
     expect(payload.markdown).toContain('Agents:');
-    expect(payload.attribution.preFirstCommit).toMatchObject({ cacheWriteTokens: 100, cacheReadTokens: 50 });
+    expect(payload.attribution.preFirstCommit).toBeUndefined();
+    expect(payload.attribution.buckets[0]).toMatchObject({ cacheWriteTokens: 100, cacheReadTokens: 50 });
     expect(deps.ensureGhReady).not.toHaveBeenCalled();
     expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
@@ -481,11 +482,12 @@ describe('runCli', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', prNumber: 123 });
   });
 
-  it('prints pre-first-commit usage before commit rows without cache columns', async () => {
+  it('excludes branch-unknown pre-first-commit usage from rendered PR totals', async () => {
     const deps = createDeps({
       readAllUsage: vi.fn().mockResolvedValue(allUsage({
         events: [
           usageEvent({
+            gitBranch: undefined,
             timestamp: '2024-01-01T00:00:00.000Z',
             inputTokens: 100,
             outputTokens: 10,
@@ -502,10 +504,11 @@ describe('runCli', () => {
     await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
 
     const markdown = deps.stdout.mock.calls[0]?.[0];
-    expect(markdown).toContain('| `pre-fir` | pre-first-commit work | 100 | 10 | ~$0.00 | 1 |');
+    expect(markdown).toContain('**This PR cost ~$0.00 in tokens**');
+    expect(markdown).not.toContain('pre-first-commit work');
+    expect(markdown).toContain('| `abcdef1` | Add CLI wiring | 0 | 0 | ~$0.00 | 0 |');
     expect(markdown).not.toContain('Cache Write');
     expect(markdown).not.toContain('Cache Read');
-    expect(markdown.indexOf('pre-first-commit work')).toBeLessThan(markdown.indexOf('Add CLI wiring'));
   });
 });
 

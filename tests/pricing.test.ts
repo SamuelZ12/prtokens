@@ -288,6 +288,25 @@ describe('priceAttributionResult', () => {
     expect(priced.totalCostUsd).toBe(0);
   });
 
+  it('prices pre-first-commit usage for diagnostics without adding it to PR totals', () => {
+    const priced = priceAttributionResult(
+      attributionResult({
+        preFirstCommit: bucket({
+          label: 'pre-first-commit work',
+          inputTokens: 1_000_000,
+          outputTokens: 100_000,
+          eventCount: 1,
+          sessionCount: 1,
+        }),
+        buckets: [bucket({ commitSha: 'aaa1111', inputTokens: 0, outputTokens: 0 })],
+      }),
+    );
+
+    expect(priced.preFirstCommit?.costUsd).toBeGreaterThan(0);
+    expect(priced.totalCostUsd).toBe(0);
+    expect(priced.buckets[0].costUsd).toBe(0);
+  });
+
   it('does not price nonzero mixed-model buckets without per-model token totals', () => {
     const priced = priceAttributionResult(
       attributionResult({
