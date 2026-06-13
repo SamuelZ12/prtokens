@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -82,7 +85,9 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('repo_hook_path="$repo_hook"');
     expect(hookContent).toContain('realpath "$repo_hook"');
     expect(hookContent).toContain('[ "$repo_hook_path" != "$current_hook" ]');
-    expect(hookContent).toContain('"$repo_hook" "$@" < "$stdin_file"');
+    expect(hookContent).toContain('if "$repo_hook" "$@" < "$stdin_file"; then');
+    expect(hookContent).toContain('status=0');
+    expect(hookContent).toContain('status=$?');
     expect(hookContent).toContain('exit "$status"');
     expect(hookContent).toContain('rm -f "$stdin_file"');
     expect(hookContent).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
@@ -472,7 +477,68 @@ describe('installGlobalPrePushHook', () => {
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
+
+  it('generated hook invokes a distinct repo-local hook exactly once', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prtokens-hook-'));
+    try {
+      const repoDir = join(tempDir, 'repo');
+      const globalHook = join(tempDir, 'global-pre-push');
+      const marker = join(tempDir, 'marker.txt');
+      mkdirSync(repoDir);
+      expect(spawnSync('git', ['init'], { cwd: repoDir, encoding: 'utf8' }).status).toBe(0);
+
+      const repoHook = join(repoDir, '.git', 'hooks', 'pre-push');
+      writeFileSync(repoHook, `#!/bin/sh\nprintf 'ran\\n' >> ${shellQuote(marker)}\nexit 0\n`);
+      chmodSync(repoHook, 0o755);
+      writeFileSync(globalHook, generatedHookBody());
+      chmodSync(globalHook, 0o755);
+
+      const result = spawnSync(globalHook, [], { cwd: repoDir, input: 'refs\n', encoding: 'utf8', timeout: 2000 });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(readFileSync(marker, 'utf8')).toBe('ran\n');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('generated hook does not recurse when it is the repo-local hook', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prtokens-hook-'));
+    try {
+      const repoDir = join(tempDir, 'repo');
+      mkdirSync(repoDir);
+      expect(spawnSync('git', ['init'], { cwd: repoDir, encoding: 'utf8' }).status).toBe(0);
+
+      const repoHook = join(repoDir, '.git', 'hooks', 'pre-push');
+      writeFileSync(repoHook, generatedHookBody());
+      chmodSync(repoHook, 0o755);
+
+      const result = spawnSync(repoHook, [], { cwd: repoDir, input: 'refs\n', encoding: 'utf8', timeout: 2000 });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
+
+function generatedHookBody(): string {
+  const hooksDir = '/home/alice/.config/git/hooks';
+  const { deps } = createDeps({
+    commands: {
+      [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
+    },
+    prtokensBinPath: '/bin/true',
+  });
+
+  return installGlobalPrePushHook(deps).hookBody;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 describe('runPreflight', () => {
   it('reports gh missing, skips auth as unknown, and warns on old Node without blocking install', () => {
