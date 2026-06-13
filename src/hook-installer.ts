@@ -181,6 +181,18 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       error: configuredHooksPathError === '' ? 'Failed to read core.hooksPath.' : `Failed to read core.hooksPath: ${configuredHooksPathError}`,
     };
   }
+  if (configuredHooksPath.status === 0 && existingHooksDir === '') {
+    return {
+      ok: false,
+      dryRun,
+      hooksDir,
+      hookPath,
+      hookBody: '',
+      hookAction: 'installed',
+      coreHooksPathAction,
+      error: 'Failed to read core.hooksPath: configured path is empty.',
+    };
+  }
   let currentHookBody: string | undefined;
   try {
     currentHookBody = deps.fs.existsSync(hookPath) ? deps.fs.readFileSync(hookPath) : undefined;
