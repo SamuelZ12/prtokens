@@ -1,3 +1,4 @@
 - Claude Code agent run: verified transcript capture.
 - Codex agent run: verified rollout capture.
 - OpenCode agent run: verified database capture.
+- Automatic pre-push hook trigger: verified with an open PR.
