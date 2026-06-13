@@ -148,7 +148,7 @@ describe('installGlobalPrePushHook', () => {
   });
 
   it('dry-run returns the plan and hook body without writing files or git config', () => {
-    const { deps } = createDeps();
+    const { deps, commands } = createDeps();
 
     const result = installGlobalPrePushHook(deps, { dryRun: true });
 
@@ -163,11 +163,16 @@ describe('installGlobalPrePushHook', () => {
     expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
-    expect(deps.runCommand).toHaveBeenCalledTimes(1);
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] }]);
   });
 
   it('returns a failed result when the hook cannot be written', () => {
-    const { deps } = createDeps();
+    const hooksDir = '/home/alice/.config/git/hooks';
+    const { deps } = createDeps({
+      commands: {
+        [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
+      },
+    });
     vi.mocked(deps.fs.writeFileSync).mockImplementation(() => {
       throw new Error('permission denied');
     });
