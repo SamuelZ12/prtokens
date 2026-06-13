@@ -173,6 +173,24 @@ describe('installGlobalPrePushHook', () => {
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
+  it('returns a failed result when core.hooksPath is configured as a relative path', () => {
+    const { deps, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: 'hooks\n', status: 0 },
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain('core.hooksPath');
+    expect(result.error).toMatch(/absolute|relative/);
+    expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
   it('returns a failed result when reading core.hooksPath throws', () => {
     const { deps } = createDeps();
     vi.mocked(deps.runCommand).mockImplementation((cmd: string, args: string[]) => {

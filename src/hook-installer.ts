@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 export interface CommandResult {
   stdout: string;
@@ -191,6 +191,18 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       hookAction: 'installed',
       coreHooksPathAction,
       error: 'Failed to read core.hooksPath: configured path is empty.',
+    };
+  }
+  if (hasExistingHooksDir && !isAbsolute(hooksDir)) {
+    return {
+      ok: false,
+      dryRun,
+      hooksDir,
+      hookPath,
+      hookBody: '',
+      hookAction: 'installed',
+      coreHooksPathAction,
+      error: 'Failed to read core.hooksPath: configured path must be absolute, not relative.',
     };
   }
   let currentHookBody: string | undefined;
