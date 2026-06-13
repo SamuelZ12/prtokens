@@ -72,10 +72,18 @@ describe('installGlobalPrePushHook', () => {
       coreHooksPathAction: 'set',
     });
     expect(mkdirs).toEqual([{ path: hooksDir, opts: { recursive: true } }]);
-    expect(files.get(hookPath)).toContain('#!/bin/sh\n# >>> prtokens >>>');
-    expect(files.get(hookPath)).toContain('# <<< prtokens <<<');
-    expect(files.get(hookPath)).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
-    expect(files.get(hookPath)).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
+    const hookContent = files.get(hookPath) ?? '';
+    expect(hookContent).toContain('#!/bin/sh\n# >>> prtokens >>>');
+    expect(hookContent).toContain('# <<< prtokens <<<');
+    expect(hookContent).toContain('stdin_file="$(mktemp)"');
+    expect(hookContent).toContain('cat > "$stdin_file"');
+    expect(hookContent).toContain('git rev-parse --absolute-git-dir');
+    expect(hookContent).toContain('"$repo_hook" "$@" < "$stdin_file"');
+    expect(hookContent).toContain('exit "$status"');
+    expect(hookContent).toContain('rm -f "$stdin_file"');
+    expect(hookContent).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
+    expect(hookContent).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null &');
+    expect(hookContent).toContain('exit 0');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
     expect(commands).toEqual([
       { cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] },
