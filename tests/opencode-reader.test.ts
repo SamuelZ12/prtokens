@@ -85,6 +85,27 @@ describe('readOpencodeUsage', () => {
     expect(result.events[0]).toMatchObject({ id: 'opencode-db:match-1', inputTokens: 10, outputTokens: 2, sessionId: 's3' });
   });
 
+  it('reads usage recorded under a sibling worktree root alias', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo/.worktrees/feature';
+    const mainWorktreeRoot = '/Users/me/repo';
+    const dataDir = await createOpencodeDataDir(homeDir);
+    await createMessageDatabase(join(dataDir, 'opencode.db'), [
+      messageRow('alias-1', 's1', {
+        role: 'assistant',
+        path: { root: mainWorktreeRoot },
+        modelID: 'gpt-5.5-fast',
+        time: { completed: Date.parse('2024-06-12T11:01:00.000Z') },
+        tokens: { input: 10, output: 2 },
+      }),
+    ]);
+
+    const result = await readOpencodeUsage({ repoRoot, repoRootAliases: [mainWorktreeRoot], homeDir, sqliteLoader: loadSqliteFixture });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({ id: 'opencode-db:alias-1', inputTokens: 10, outputTokens: 2, sessionId: 's1' });
+  });
+
   it('dedupes migrated messages across sibling databases', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/me/repo';

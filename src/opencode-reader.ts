@@ -30,7 +30,7 @@ export interface ReadOpencodeResult {
 }
 
 export async function readOpencodeUsage(input: ReadOpencodeInput): Promise<ReadOpencodeResult> {
-  const repoRoot = path.resolve(input.repoRoot);
+  const repoRoots = uniqueRepoRoots([input.repoRoot, ...(input.repoRootAliases ?? [])]);
   const dataDir = path.join(input.homeDir ?? os.homedir(), '.local', 'share', 'opencode');
   const dbFiles = await findOpencodeDatabases(dataDir);
   const diagnostics: OpencodeDiagnostics = {
@@ -56,7 +56,7 @@ export async function readOpencodeUsage(input: ReadOpencodeInput): Promise<ReadO
   }
 
   for (const dbFile of dbFiles) {
-    const candidates = readDatabase(sqlite, dbFile, repoRoot, diagnostics);
+    const candidates = readDatabase(sqlite, dbFile, repoRoots, diagnostics);
     for (const event of candidates) {
       if (seenIds.has(event.id)) {
         diagnostics.dedupedEventCount += 1;
@@ -99,7 +99,7 @@ async function findOpencodeDatabases(dataDir: string): Promise<string[]> {
 function readDatabase(
   sqlite: SqliteModule,
   dbFile: string,
-  repoRoot: string,
+  repoRoots: string[],
   diagnostics: OpencodeDiagnostics,
 ): UsageEvent[] {
   let db: DatabaseLike | undefined;
@@ -108,7 +108,7 @@ function readDatabase(
     const malformedCount = readMalformedCount(db);
     diagnostics.malformedLineCount += malformedCount;
     diagnostics.skippedLineCount += malformedCount;
-    const rows = readUsageRows(db, repoRoot);
+    const rows = readUsageRows(db, repoRoots);
     const events: UsageEvent[] = [];
 
     for (const row of rows) {
@@ -134,7 +134,8 @@ function readMalformedCount(db: DatabaseLike): number {
   return getNumber(rows[0]?.count) ?? 0;
 }
 
-function readUsageRows(db: DatabaseLike, repoRoot: string): Record<string, unknown>[] {
+function readUsageRows(db: DatabaseLike, repoRoots: string[]): Record<string, unknown>[] {
+  const placeholders = repoRoots.map(() => '?').join(', ');
   return db
     .prepare(
       `SELECT
@@ -151,10 +152,14 @@ function readUsageRows(db: DatabaseLike, repoRoot: string): Record<string, unkno
       FROM message
       WHERE json_valid(data)
         AND json_extract(data, '$.role') = 'assistant'
-        AND json_extract(data, '$.path.root') = ?
+        AND json_extract(data, '$.path.root') IN (${placeholders})
       ORDER BY COALESCE(json_extract(data, '$.time.completed'), json_extract(data, '$.time.created'), time_created), id`,
     )
-    .all(repoRoot);
+    .all(...repoRoots);
+}
+
+function uniqueRepoRoots(repoRoots: string[]): string[] {
+  return [...new Set(repoRoots.map((repoRoot) => path.resolve(repoRoot)))];
 }
 
 function rowToUsageEvent(row: Record<string, unknown>): UsageEvent | undefined {

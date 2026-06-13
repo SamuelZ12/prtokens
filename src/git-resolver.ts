@@ -19,7 +19,7 @@ export interface PullRequestInfo {
 }
 
 export type ResolvePrResult =
-  | { kind: 'ok'; branch: string; pr: PullRequestInfo; commits: CommitRecord[] }
+  | { kind: 'ok'; branch: string; repoRoot: string; worktreeRoots: string[]; pr: PullRequestInfo; commits: CommitRecord[] }
   | { kind: 'no-pr'; branch: string; message: string };
 
 interface GhPullRequest {
@@ -88,9 +88,10 @@ export async function resolvePullRequest(input: {
   const runner = input.runner ?? defaultCommandRunner;
   let branch = '';
   let cwd = input.cwd;
+  let repoRoot = input.cwd ?? '';
   try {
     branch = (await runner.run('git', ['branch', '--show-current'], { cwd: input.cwd })).stdout.trim();
-    const repoRoot = (await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd: input.cwd })).stdout.trim();
+    repoRoot = (await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd: input.cwd })).stdout.trim();
     cwd = repoRoot || input.cwd;
   } catch (error) {
     if (isNotGitRepositoryError(error)) {
@@ -111,6 +112,7 @@ export async function resolvePullRequest(input: {
 
   const repository = repositoryFromPrUrl(pr.url);
   const currentUserLogin = (await readAuthenticatedUserLogin(runner, cwd)) ?? pr.author.login;
+  const worktreeRoots = await readWorktreeRoots(runner, cwd, repoRoot || cwd || '');
   const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName);
   const localCommitsByPatchId = new Map<string, LocalCommit>();
   for (const commit of localCommits) {
@@ -146,6 +148,8 @@ export async function resolvePullRequest(input: {
   return {
     kind: 'ok',
     branch,
+    repoRoot: repoRoot || cwd || '',
+    worktreeRoots,
     pr: {
       number: pr.number,
       url: pr.url,
@@ -156,6 +160,25 @@ export async function resolvePullRequest(input: {
     },
     commits,
   };
+}
+
+async function readWorktreeRoots(runner: CommandRunner, cwd: string | undefined, fallbackRoot: string): Promise<string[]> {
+  try {
+    const result = await runner.run('git', ['worktree', 'list', '--porcelain'], { cwd });
+    const roots = result.stdout
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '))
+      .map((line) => line.slice('worktree '.length).trim())
+      .filter((root) => root !== '');
+
+    return uniqueStrings([fallbackRoot, ...roots]);
+  } catch {
+    return uniqueStrings([fallbackRoot]);
+  }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value !== ''))];
 }
 
 function repositoryFromPrUrl(prUrl: string): string {

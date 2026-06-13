@@ -182,6 +182,25 @@ describe('runCli', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
   });
 
+  it('passes resolved worktree roots to usage readers', async () => {
+    const deps = createDeps({
+      cwd: '/repo/.worktrees/feature',
+      resolvePullRequest: vi.fn().mockResolvedValue(
+        okPr({
+          repoRoot: '/repo/.worktrees/feature',
+          worktreeRoots: ['/repo', '/repo/.worktrees/feature'],
+        }),
+      ),
+    });
+
+    await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
+
+    expect(deps.readAllUsage).toHaveBeenCalledWith({
+      repoRoot: '/repo/.worktrees/feature',
+      repoRootAliases: ['/repo', '/repo/.worktrees/feature'],
+    });
+  });
+
   it('--dry-run prints markdown and does not check gh or post', async () => {
     const deps = createDeps();
 

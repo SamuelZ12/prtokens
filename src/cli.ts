@@ -76,7 +76,10 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     return 0;
   }
 
-  const usage = await cliDeps.readAllUsage({ repoRoot: cliDeps.cwd });
+  const usage = await cliDeps.readAllUsage({
+    repoRoot: resolvedPr.repoRoot,
+    repoRootAliases: resolvedPr.worktreeRoots,
+  });
   if (flags.verbose) {
     printDiagnostics(usage.diagnostics, cliDeps.stderr);
   }

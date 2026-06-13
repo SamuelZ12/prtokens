@@ -5,6 +5,7 @@ import type { UsageEvent } from './types.js';
 
 export interface ReadTranscriptsInput {
   repoRoot: string;
+  repoRootAliases?: string[];
   homeDir?: string;
 }
 
