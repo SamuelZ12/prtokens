@@ -406,6 +406,8 @@ describe('runCli', () => {
             message: 'other author work',
             inputTokens: 100_000,
             outputTokens: 10_000,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 0,
             costUsd: 1,
             sessionCount: 1,
           },
@@ -471,6 +473,31 @@ describe('runCli', () => {
     await expect(runCli(['--pr', '123', '--dry-run'], deps)).resolves.toBe(0);
 
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', prNumber: 123 });
+  });
+
+  it('prints pre-first-commit usage before commit rows with cache tokens', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
+        events: [
+          usageEvent({
+            timestamp: '2024-01-01T00:00:00.000Z',
+            inputTokens: 100,
+            outputTokens: 10,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 50,
+          }),
+        ],
+      })),
+      resolvePullRequest: vi.fn().mockResolvedValue(okPr({
+        commits: [commit({ authoredAt: '2024-01-01T00:05:00.000Z' })],
+      })),
+    });
+
+    await expect(runCli(['--dry-run'], deps)).resolves.toBe(0);
+
+    const markdown = deps.stdout.mock.calls[0]?.[0];
+    expect(markdown).toContain('| `pre-fir` | pre-first-commit work | 100 | 10 | 0 | 50 |');
+    expect(markdown.indexOf('pre-first-commit work')).toBeLessThan(markdown.indexOf('Add CLI wiring'));
   });
 });
 

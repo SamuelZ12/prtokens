@@ -36,7 +36,7 @@ export interface AttributionBucket extends TokenTotals {
   patchId?: string;
   message?: string;
   authorLogin?: string;
-  label?: 'uncommitted tail';
+  label?: 'pre-first-commit work' | 'uncommitted tail';
   eventCount: number;
   lowConfidenceEventCount: number;
   models: string[];
@@ -45,6 +45,7 @@ export interface AttributionBucket extends TokenTotals {
 
 export interface AttributionResult {
   branch: string;
+  preFirstCommit?: AttributionBucket;
   buckets: AttributionBucket[];
   uncommittedTail?: AttributionBucket;
   totals: TokenTotals & {

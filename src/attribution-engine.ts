@@ -15,6 +15,7 @@ type MutableBucket = AttributionBucket & {
 export function attributeUsageToCommits(input: AttributeUsageInput): AttributionResult {
   const commits = [...input.commits].sort((left, right) => Date.parse(left.authoredAt) - Date.parse(right.authoredAt));
   const buckets = commits.map((commit) => createCommitBucket(commit));
+  let preFirstCommit: MutableBucket | undefined;
   let uncommittedTail: MutableBucket | undefined;
 
   for (const event of input.events) {
@@ -24,11 +25,21 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
       continue;
     }
 
-    const bucket = firstBucketAtOrAfterEvent(buckets, commits, event) ?? (uncommittedTail ??= createTailBucket());
+    const bucket = bucketForEvent(
+      buckets,
+      commits,
+      event,
+      () => (preFirstCommit ??= createPreFirstCommitBucket()),
+      () => (uncommittedTail ??= createTailBucket()),
+    );
     addEventToBucket(bucket, event, lowConfidence);
   }
 
-  const allBuckets = uncommittedTail === undefined ? buckets : [...buckets, uncommittedTail];
+  const allBuckets = [
+    ...(preFirstCommit === undefined ? [] : [preFirstCommit]),
+    ...buckets,
+    ...(uncommittedTail === undefined ? [] : [uncommittedTail]),
+  ];
   const totalSessionIds = new Set<string>();
 
   const totals = allBuckets.reduce(
@@ -62,6 +73,7 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
 
   return {
     branch: input.branch,
+    preFirstCommit: preFirstCommit === undefined ? undefined : stripInternalSets(preFirstCommit),
     buckets: buckets.map(stripInternalSets),
     uncommittedTail: uncommittedTail === undefined ? undefined : stripInternalSets(uncommittedTail),
     totals,
@@ -69,6 +81,23 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
       attributedPercent: percent(totals.attributedEventCount, totals.observedEventCount),
       lowConfidencePercent: percent(totals.lowConfidenceEventCount, totals.observedEventCount),
     },
+  };
+}
+
+function createPreFirstCommitBucket(): MutableBucket {
+  return {
+    label: 'pre-first-commit work',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheWriteTokens: 0,
+    cacheReadTokens: 0,
+    sessionCount: 0,
+    eventCount: 0,
+    lowConfidenceEventCount: 0,
+    models: [],
+    modelTokenTotals: {},
+    sessionIds: new Set<string>(),
+    modelNames: new Set<string>(),
   };
 }
 
@@ -118,6 +147,23 @@ function firstBucketAtOrAfterEvent(
   const index = commits.findIndex((commit) => Date.parse(commit.authoredAt) >= eventTime);
 
   return index === -1 ? undefined : buckets[index];
+}
+
+function bucketForEvent(
+  buckets: MutableBucket[],
+  commits: CommitRecord[],
+  event: UsageEvent,
+  getPreFirstCommit: () => MutableBucket,
+  getUncommittedTail: () => MutableBucket,
+): MutableBucket {
+  const eventTime = Date.parse(event.timestamp);
+  const firstCommitTime = commits[0] === undefined ? undefined : Date.parse(commits[0].authoredAt);
+
+  if (firstCommitTime !== undefined && eventTime < firstCommitTime) {
+    return getPreFirstCommit();
+  }
+
+  return firstBucketAtOrAfterEvent(buckets, commits, event) ?? getUncommittedTail();
 }
 
 function addEventToBucket(bucket: MutableBucket, event: UsageEvent, lowConfidence: boolean): void {

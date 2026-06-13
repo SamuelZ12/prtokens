@@ -29,6 +29,7 @@ export type PricedAttributionBucket = AttributionBucket & {
 };
 
 export type PricedAttributionResult = AttributionResult & {
+  preFirstCommit?: PricedAttributionBucket;
   buckets: PricedAttributionBucket[];
   uncommittedTail?: PricedAttributionBucket;
   totalCostUsd: number;
@@ -42,15 +43,21 @@ export function estimateUsageCost(event: UsageEvent): UsageCostEstimate {
 }
 
 export function priceAttributionResult(result: AttributionResult): PricedAttributionResult {
+  const preFirstCommit = result.preFirstCommit === undefined ? undefined : priceBucket(result.preFirstCommit);
   const buckets = result.buckets.map(priceBucket);
   const uncommittedTail = result.uncommittedTail === undefined ? undefined : priceBucket(result.uncommittedTail);
-  const allPricedBuckets = uncommittedTail === undefined ? buckets : [...buckets, uncommittedTail];
+  const allPricedBuckets = [
+    ...(preFirstCommit === undefined ? [] : [preFirstCommit]),
+    ...buckets,
+    ...(uncommittedTail === undefined ? [] : [uncommittedTail]),
+  ];
   const warnings = [
     ...new Set(allPricedBuckets.flatMap((bucket) => (bucket.warning === undefined ? [] : [bucket.warning]))),
   ];
 
   return {
     ...result,
+    preFirstCommit,
     buckets,
     uncommittedTail,
     totalCostUsd: allPricedBuckets.reduce((total, bucket) => total + bucket.costUsd, 0),

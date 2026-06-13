@@ -83,14 +83,21 @@ describe('attributeUsageToCommits', () => {
     expect(result.buckets.map((bucket) => bucket.commitSha)).toEqual(['aaa1111', 'bbb2222']);
   });
 
-  it('rolls usage before the first commit into the first commit', () => {
+  it('puts usage before the first commit in a visible pre-first-commit bucket', () => {
     const result = attributeUsageToCommits({
       branch: 'main',
       commits,
       events: [usageEvent({ gitBranch: 'main' })],
     });
 
-    expect(result.buckets[0]).toMatchObject({ commitSha: 'aaa1111', eventCount: 1, inputTokens: 100 });
+    expect(result.preFirstCommit).toMatchObject({
+      label: 'pre-first-commit work',
+      inputTokens: 100,
+      outputTokens: 10,
+      eventCount: 1,
+      sessionCount: 1,
+    });
+    expect(result.buckets[0]).toMatchObject({ commitSha: 'aaa1111', eventCount: 0, inputTokens: 0 });
     expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0 });
   });
 

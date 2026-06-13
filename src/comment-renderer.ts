@@ -23,6 +23,8 @@ export interface RenderAuthorInput {
     message: string;
     inputTokens: number;
     outputTokens: number;
+    cacheWriteTokens: number;
+    cacheReadTokens: number;
     costUsd: number;
     sessionCount: number;
   }>;
@@ -193,13 +195,13 @@ function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSu
     '<details>',
     '<summary>Commit breakdown</summary>',
     '',
-    '| Commit | Message | In | Out | Cost | Sessions |',
-    '| --- | --- | ---: | ---: | ---: | ---: |',
+    '| Commit | Message | In | Out | Cache Write | Cache Read | Cost | Sessions |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
     ...author.rows.map(
       (row) =>
         `| \`${truncateSha(row.sha)}\` | ${escapeTableCell(row.message)} | ${formatTokens(row.inputTokens)} | ${formatTokens(
           row.outputTokens,
-        )} | ${formatCost(row.costUsd)} | ${row.sessionCount} |`,
+        )} | ${formatTokens(row.cacheWriteTokens)} | ${formatTokens(row.cacheReadTokens)} | ${formatCost(row.costUsd)} | ${row.sessionCount} |`,
     ),
     '',
     '</details>',

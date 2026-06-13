@@ -350,10 +350,12 @@ function toRenderAuthorInput(
   agents?: RenderAuthorInput['agents'],
 ): RenderAuthorInput {
   const rows = allPricedBuckets(priced).map((bucket) => ({
-    sha: bucket.commitSha ?? 'uncommitted',
+    sha: bucket.commitSha ?? bucket.label ?? 'uncommitted',
     message: bucket.message ?? bucket.label ?? '',
     inputTokens: bucket.inputTokens,
     outputTokens: bucket.outputTokens,
+    cacheWriteTokens: bucket.cacheWriteTokens,
+    cacheReadTokens: bucket.cacheReadTokens,
     costUsd: bucket.costUsd,
     sessionCount: bucket.sessionCount,
   }));
@@ -399,5 +401,9 @@ function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch:
 }
 
 function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
-  return priced.uncommittedTail === undefined ? priced.buckets : [...priced.buckets, priced.uncommittedTail];
+  return [
+    ...(priced.preFirstCommit === undefined ? [] : [priced.preFirstCommit]),
+    ...priced.buckets,
+    ...(priced.uncommittedTail === undefined ? [] : [priced.uncommittedTail]),
+  ];
 }
