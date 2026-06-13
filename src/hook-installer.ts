@@ -168,7 +168,8 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
     : dryRun
       ? 'would-set'
       : 'set';
-  if (configuredHooksPath.status !== 0 && configuredHooksPathError !== '') {
+  const missingHooksPathConfig = configuredHooksPath.status === 1 && configuredHooksPathError === '';
+  if (configuredHooksPath.status !== 0 && !missingHooksPathConfig) {
     return {
       ok: false,
       dryRun,
@@ -177,7 +178,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       hookBody: '',
       hookAction: 'installed',
       coreHooksPathAction,
-      error: `Failed to read core.hooksPath: ${configuredHooksPathError}`,
+      error: configuredHooksPathError === '' ? 'Failed to read core.hooksPath.' : `Failed to read core.hooksPath: ${configuredHooksPathError}`,
     };
   }
   let currentHookBody: string | undefined;
