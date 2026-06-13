@@ -232,8 +232,8 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       error: 'Unsupported non-shell existing pre-push hook.',
     };
   }
-  if (currentHookBody !== undefined && !hasManagedBlock(currentHookBody)) {
-    const terminalCommand = terminalLastCommand(currentHookBody);
+  if (currentHookBody !== undefined) {
+    const terminalCommand = terminalLastCommand(contentBeforeManagedBlock(currentHookBody) ?? currentHookBody);
     if (terminalCommand !== undefined) {
       return {
         ok: false,
@@ -243,7 +243,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
         hookBody: currentHookBody,
         hookAction: 'appended-to-existing-hook',
         coreHooksPathAction,
-        error: `Existing pre-push hook ends with terminal ${terminalCommand}; manual merge required.`,
+        error: `Managed prtokens block would be unreachable after terminal ${terminalCommand}; manual merge required.`,
       };
     }
   }
@@ -313,12 +313,14 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   };
 }
 
-function hasManagedBlock(hookBody: string): boolean {
-  return createManagedBlockPattern().test(hookBody);
-}
-
 function createManagedBlockPattern(): RegExp {
   return new RegExp(`${escapeRegExp(managedStart)}[\\s\\S]*?${escapeRegExp(managedEnd)}`);
+}
+
+function contentBeforeManagedBlock(hookBody: string): string | undefined {
+  const startIndex = hookBody.indexOf(managedStart);
+
+  return startIndex === -1 ? undefined : hookBody.slice(0, startIndex);
 }
 
 function terminalLastCommand(hookBody: string): 'exit' | 'exec' | undefined {
@@ -332,14 +334,9 @@ function terminalLastCommand(hookBody: string): 'exit' | 'exec' | undefined {
     return undefined;
   }
 
-  if (/^exit(?:\s|$)/.test(lastMeaningfulLine)) {
-    return 'exit';
-  }
-  if (/^exec(?:\s|$)/.test(lastMeaningfulLine)) {
-    return 'exec';
-  }
+  const match = /(?:^|(?:;|&&|\|\||\|)\s*)(exit|exec)(?=$|\s|;|&&|\|\||\|)/.exec(lastMeaningfulLine);
 
-  return undefined;
+  return match?.[1] as 'exit' | 'exec' | undefined;
 }
 
 function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean): string {

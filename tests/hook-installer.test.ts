@@ -340,7 +340,7 @@ describe('installGlobalPrePushHook', () => {
     expect(previousStatusExitIndex).toBeLessThan(backgroundLaunchIndex);
   });
 
-  it.each(['exit 0', 'exec ./custom-pre-push'])(
+  it.each(['exit 0', 'exec ./custom-pre-push', 'echo done; exit 0', 'cleanup && exit 0'])(
     'returns a failed result for an existing shell hook ending in terminal %s',
     (terminalCommand) => {
       const existing = `#!/bin/sh\necho before\n${terminalCommand}\n`;
@@ -380,6 +380,34 @@ describe('installGlobalPrePushHook', () => {
     expect(result.hookAction).toBe('appended-to-existing-hook');
     expect(files.get('/custom/hooks/pre-push')).toContain('# >>> prtokens >>>');
     expect(deps.fs.writeFileSync).toHaveBeenCalledWith('/custom/hooks/pre-push', expect.stringContaining(existing));
+    expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
+  });
+
+  it('returns a failed result for an existing managed block after terminal prefix', () => {
+    const existing = [
+      '#!/bin/sh',
+      'echo done; exit 0',
+      '# >>> prtokens >>>',
+      'old managed content',
+      '# <<< prtokens <<<',
+      '',
+    ].join('\n');
+    const { deps, files, commands } = createDeps({
+      commands: {
+        'git config --global --path --get core.hooksPath': { stdout: '/custom/hooks\n', status: 0 },
+      },
+      files: {
+        '/custom/hooks/pre-push': existing,
+      },
+    });
+
+    const result = installGlobalPrePushHook(deps);
+
+    expect(result).toMatchObject({ ok: false, hookPath: '/custom/hooks/pre-push' });
+    expect(result.error).toMatch(/unreachable|manual merge|terminal/);
+    expect(files.get('/custom/hooks/pre-push')).toBe(existing);
+    expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
+    expect(deps.fs.chmodSync).not.toHaveBeenCalled();
     expect(commands).toEqual([{ cmd: 'git', args: ['config', '--global', '--path', '--get', 'core.hooksPath'] }]);
   });
 
