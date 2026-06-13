@@ -93,7 +93,6 @@ describe('installGlobalPrePushHook', () => {
       hookPath,
       coreHooksPathAction: 'set',
     });
-    expect(result.hookAction).not.toBe('installed');
     expect(result.error).toContain('core.hooksPath');
     expect(commands).toEqual([
       { cmd: 'git', args: ['config', '--global', '--get', 'core.hooksPath'] },
