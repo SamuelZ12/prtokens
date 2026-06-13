@@ -631,7 +631,7 @@ describe('runPreflight', () => {
       {
         name: 'Node.js',
         status: 'ok',
-        message: 'Node.js 22.13.0 satisfies >=22.13.0.',
+        message: 'Node.js 22.13.0 satisfies the required 22.13.0.',
       },
       {
         name: 'GitHub CLI',

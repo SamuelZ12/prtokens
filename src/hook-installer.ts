@@ -99,7 +99,7 @@ export function runPreflight(deps: HookInstallerDeps): PreflightResult {
     checks.push({
       name: 'Node.js',
       status: 'ok',
-      message: `Node.js ${deps.nodeVersion} satisfies >=${requiredNodeVersion}.`,
+      message: `Node.js ${deps.nodeVersion} satisfies the required ${requiredNodeVersion}.`,
     });
   } else {
     checks.push({
