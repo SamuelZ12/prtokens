@@ -1,3 +1,11 @@
+export interface RenderAgentInput {
+  agent: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  sessionCount: number;
+}
+
 export interface RenderAuthorInput {
   login: string;
   totalCostUsd: number;
@@ -7,6 +15,7 @@ export interface RenderAuthorInput {
   cacheReadTokens: number;
   sessionCount: number;
   models: string[];
+  agents?: RenderAgentInput[];
   attributedPercent: number;
   lowConfidencePercent: number;
   rows: Array<{
@@ -32,6 +41,7 @@ type AuthorSummary = Pick<
   | 'outputTokens'
   | 'sessionCount'
   | 'models'
+  | 'agents'
   | 'attributedPercent'
   | 'lowConfidencePercent'
 >;
@@ -135,13 +145,27 @@ function isAuthorSummary(value: unknown): value is AuthorSummary {
     typeof summary.sessionCount === 'number' &&
     Array.isArray(summary.models) &&
     summary.models.every((model) => typeof model === 'string') &&
+    (summary.agents === undefined || (Array.isArray(summary.agents) && summary.agents.every(isRenderAgentInput))) &&
     typeof summary.attributedPercent === 'number' &&
     typeof summary.lowConfidencePercent === 'number'
   );
 }
 
+function isRenderAgentInput(value: unknown): value is RenderAgentInput {
+  if (!value || typeof value !== 'object') return false;
+  const agent = value as Record<string, unknown>;
+
+  return (
+    typeof agent.agent === 'string' &&
+    typeof agent.costUsd === 'number' &&
+    typeof agent.inputTokens === 'number' &&
+    typeof agent.outputTokens === 'number' &&
+    typeof agent.sessionCount === 'number'
+  );
+}
+
 function toAuthorSummary(author: RenderAuthorInput): AuthorSummary {
-  return {
+  const summary: AuthorSummary = {
     login: author.login,
     totalCostUsd: author.totalCostUsd,
     inputTokens: author.inputTokens,
@@ -151,6 +175,9 @@ function toAuthorSummary(author: RenderAuthorInput): AuthorSummary {
     attributedPercent: author.attributedPercent,
     lowConfidencePercent: author.lowConfidencePercent,
   };
+
+  if (author.agents !== undefined) summary.agents = author.agents;
+  return summary;
 }
 
 function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSummary): string[] {
@@ -161,6 +188,7 @@ function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSu
     renderSummaryLine(summary),
     '',
     renderModels(summary.models),
+    ...renderAgents(summary.agents),
     '',
     '<details>',
     '<summary>Commit breakdown</summary>',
@@ -196,6 +224,12 @@ function renderSummaryLine(summary: AuthorSummary): string {
 function renderModels(models: string[]): string {
   if (models.length === 0) return 'Models: none';
   return `Models: ${models.map((model) => `\`${model}\``).join(', ')}`;
+}
+
+function renderAgents(agents: RenderAgentInput[] | undefined): string[] {
+  if (agents === undefined || agents.length < 2) return [];
+  const sortedAgents = [...agents].sort((left, right) => right.costUsd - left.costUsd);
+  return [`Agents: ${sortedAgents.map((agent) => `\`${agent.agent}\` ${formatCost(agent.costUsd)}`).join(' · ')}`];
 }
 
 function formatCost(costUsd: number): string {
