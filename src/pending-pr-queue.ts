@@ -47,6 +47,17 @@ export function writePendingQueue(queuePath: string, queue: PendingPrQueue): voi
   });
 }
 
+export function scrubPendingQueue(queuePath: string): PendingPrQueue {
+  if (!existsSync(queuePath)) return { version: 1, jobs: [] };
+
+  return withQueueLock(queuePath, () => {
+    if (!existsSync(queuePath)) return { version: 1, jobs: [] };
+    const queue = readPendingQueueUnlocked(queuePath);
+    writePendingQueueUnlocked(queuePath, queue);
+    return queue;
+  });
+}
+
 export function mergePendingQueue(queuePath: string, mergeFn: (queue: PendingPrQueue) => PendingPrQueue): PendingPrQueue {
   return withQueueLock(queuePath, () => {
     const merged = sanitizePendingQueue(mergeFn(readPendingQueueUnlocked(queuePath)));
@@ -92,6 +103,18 @@ export function updatePendingPrJob(queuePath: string, id: string, patch: Partial
     return queue;
   });
   return writtenJob;
+}
+
+export async function withPendingQueueProcessLock<T>(queuePath: string, fn: () => Promise<T>): Promise<T | undefined> {
+  mkdirSync(dirname(queuePath), { recursive: true });
+  const lockPath = `${queuePath}.process.lock`;
+  if (!tryAcquireProcessLock(lockPath)) return undefined;
+
+  try {
+    return await fn();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
 }
 
 function readPendingQueueUnlocked(queuePath: string): PendingPrQueue {
@@ -227,6 +250,37 @@ function acquireQueueLock(lockPath: string): void {
       if (Date.now() >= deadline) throw new Error(`Timed out waiting for pending PR queue lock at ${lockPath}`);
       waitForQueueLock();
     }
+  }
+}
+
+function tryAcquireProcessLock(lockPath: string): boolean {
+  while (true) {
+    try {
+      mkdirSync(lockPath);
+      writeFileSync(join(lockPath, 'pid'), String(process.pid));
+      return true;
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== 'EEXIST') throw error;
+      if (!isLiveProcessLock(lockPath) && isStaleQueueLock(lockPath)) {
+        rmSync(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      return false;
+    }
+  }
+}
+
+function isLiveProcessLock(lockPath: string): boolean {
+  try {
+    const pid = Number(readFileSync(join(lockPath, 'pid'), 'utf8'));
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === 'ESRCH') return false;
+    if (isErrnoException(error) && error.code === 'ENOENT') return false;
+    if (isErrnoException(error) && error.code === 'EPERM') return true;
+    throw error;
   }
 }
 

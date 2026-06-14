@@ -17,7 +17,7 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, scrubPendingQueue, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 import { processPendingPrJobs } from './pending-pr-worker.js';
 import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
@@ -41,10 +41,12 @@ export interface CliDeps {
   installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
   queuePath: string;
   readPendingQueue: typeof readPendingQueue;
+  scrubPendingQueue: typeof scrubPendingQueue;
   writePendingQueue: typeof writePendingQueue;
   mergePendingQueue: typeof mergePendingQueue;
   enqueuePendingPr: typeof enqueuePendingPr;
   processPendingPrJobs: typeof processPendingPrJobs;
+  withPendingQueueProcessLock: typeof withPendingQueueProcessLock;
   now(): Date;
   sleep(ms: number): Promise<void>;
   queueRetryDelayMs: number;
@@ -69,7 +71,7 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
   }
 
   if (argv[0] === 'status') {
-    const queue = cliDeps.readPendingQueue(cliDeps.queuePath);
+    const queue = cliDeps.scrubPendingQueue(cliDeps.queuePath);
     cliDeps.stdout(formatQueueStatus(queue, cliDeps.now()));
     return 0;
   }
@@ -147,10 +149,12 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
     queuePath: deps.queuePath ?? defaultQueuePath(process.env),
     readPendingQueue: deps.readPendingQueue ?? readPendingQueue,
+    scrubPendingQueue: deps.scrubPendingQueue ?? scrubPendingQueue,
     writePendingQueue: deps.writePendingQueue ?? writePendingQueue,
     mergePendingQueue: deps.mergePendingQueue ?? mergePendingQueue,
     enqueuePendingPr: deps.enqueuePendingPr ?? enqueuePendingPr,
     processPendingPrJobs: deps.processPendingPrJobs ?? processPendingPrJobs,
+    withPendingQueueProcessLock: deps.withPendingQueueProcessLock ?? withPendingQueueProcessLock,
     now: deps.now ?? (() => new Date()),
     sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     queueRetryDelayMs: deps.queueRetryDelayMs ?? defaultQueueRetryDelayMs,
@@ -317,43 +321,45 @@ async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> 
 }
 
 async function runProcessQueue(deps: CliDeps): Promise<number> {
-  const maxPasses = Math.max(1, deps.queueProcessMaxPasses);
-  for (let pass = 0; pass < maxPasses; pass += 1) {
-    const now = deps.now();
-    const originalQueue = deps.readPendingQueue(deps.queuePath);
-    const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
-    let queueAfterPass: PendingPrQueue | undefined;
+  await deps.withPendingQueueProcessLock(deps.queuePath, async () => {
+    const maxPasses = Math.max(1, deps.queueProcessMaxPasses);
+    for (let pass = 0; pass < maxPasses; pass += 1) {
+      const now = deps.now();
+      const originalQueue = deps.readPendingQueue(deps.queuePath);
+      const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
+      let queueAfterPass: PendingPrQueue | undefined;
 
-    await deps.processPendingPrJobs({
-      queue: originalQueue,
-      now,
-      retryWindowMs: queueRetryWindowMs,
-      retentionMs: queueRetentionMs,
-      readRemoteHead: (job) => deps.runGitLsRemote(job.repoRoot, job.remoteName, `refs/heads/${job.remoteBranch}`),
-      post: (job) => postPrtokensForCurrentRepo({
-        cwd: job.repoRoot,
-        dryRun: false,
-        json: false,
-        verbose: false,
-        branch: job.remoteBranch,
-        headSha: job.headSha,
-        stdout: deps.stdout,
-        stderr: deps.stderr,
-        readAllUsage: deps.readAllUsage,
-        resolvePullRequest: deps.resolvePullRequest,
-        ensureGhReady: deps.ensureGhReady,
-        upsertPrComment: deps.upsertPrComment,
-      }),
-      writeQueue: (queue) => {
-        queueAfterPass = deps.mergePendingQueue(deps.queuePath, (latestQueue) => mergeProcessedQueue(originalJobIds, queue, latestQueue));
-      },
-    });
+      await deps.processPendingPrJobs({
+        queue: originalQueue,
+        now,
+        retryWindowMs: queueRetryWindowMs,
+        retentionMs: queueRetentionMs,
+        readRemoteHead: (job) => deps.runGitLsRemote(job.repoRoot, job.remoteName, `refs/heads/${job.remoteBranch}`),
+        post: (job) => postPrtokensForCurrentRepo({
+          cwd: job.repoRoot,
+          dryRun: false,
+          json: false,
+          verbose: false,
+          branch: job.remoteBranch,
+          headSha: job.headSha,
+          stdout: deps.stdout,
+          stderr: deps.stderr,
+          readAllUsage: deps.readAllUsage,
+          resolvePullRequest: deps.resolvePullRequest,
+          ensureGhReady: deps.ensureGhReady,
+          upsertPrComment: deps.upsertPrComment,
+        }),
+        writeQueue: (queue) => {
+          queueAfterPass = deps.mergePendingQueue(deps.queuePath, (latestQueue) => mergeProcessedQueue(originalJobIds, queue, latestQueue));
+        },
+      });
 
-    if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now, originalJobIds)) {
-      break;
+      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now, originalJobIds)) {
+        break;
+      }
+      await deps.sleep(deps.queueRetryDelayMs);
     }
-    await deps.sleep(deps.queueRetryDelayMs);
-  }
+  });
   return 0;
 }
 

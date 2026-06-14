@@ -100,9 +100,11 @@ function createDeps(overrides = {}) {
     }),
     queuePath: '/state/prtokens/pending-prs.json',
     readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    scrubPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
     writePendingQueue: vi.fn(),
     enqueuePendingPr: vi.fn(),
     processPendingPrJobs: vi.fn().mockResolvedValue(undefined),
+    withPendingQueueProcessLock: vi.fn((_queuePath, fn) => fn()),
     now: vi.fn(() => new Date('2026-06-14T00:00:00.000Z')),
     sleep: vi.fn().mockResolvedValue(undefined),
     queueRetryDelayMs: 1,
@@ -222,7 +224,7 @@ describe('runCli', () => {
 
   it('prints queue status', async () => {
     const deps = createDeps({
-      readPendingQueue: vi.fn().mockReturnValue({
+      scrubPendingQueue: vi.fn().mockReturnValue({
         version: 1,
         jobs: [{
           id: 'job-1',
@@ -242,7 +244,7 @@ describe('runCli', () => {
 
     await expect(runCli(['status'], deps)).resolves.toBe(0);
 
-    expect(deps.readPendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json');
+    expect(deps.scrubPendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json');
     expect(deps.stdout).toHaveBeenCalledWith(expect.stringContaining('Pending PR posts'));
   });
 
@@ -494,6 +496,19 @@ describe('runCli', () => {
       branch: 'feature/queued',
       headSha: 'feedface1234',
     });
+  });
+
+  it('exits process-queue without processing when another processor holds the lock', async () => {
+    const deps = createDeps({
+      withPendingQueueProcessLock: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.withPendingQueueProcessLock).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.any(Function));
+    expect(deps.processPendingPrJobs).not.toHaveBeenCalled();
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 
   it('processes queue with remote head checks', async () => {

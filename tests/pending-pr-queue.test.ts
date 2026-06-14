@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { enqueuePendingPr, formatQueueStatus, mergePendingQueue, readPendingQueue, updatePendingPrJob, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
+import { enqueuePendingPr, formatQueueStatus, mergePendingQueue, readPendingQueue, scrubPendingQueue, updatePendingPrJob, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
 
 let tempDirs: string[] = [];
 
@@ -195,6 +195,48 @@ describe('pending PR queue', () => {
     expect(written.jobs[1]).toMatchObject({ id: 'latest-job', status: 'pending' });
     expect(readFileSync(queuePath, 'utf8')).not.toContain('remoteUrl');
     expect(readPendingQueue(queuePath)).toEqual(written);
+  });
+
+  it('scrubs legacy remote URLs without creating missing queue files', () => {
+    const queuePath = tempQueuePath();
+    const missingQueuePath = join(queuePath, 'missing', 'pending-prs.json');
+
+    expect(scrubPendingQueue(missingQueuePath)).toEqual({ version: 1, jobs: [] });
+    expect(existsSync(missingQueuePath)).toBe(false);
+
+    writeFileSync(
+      queuePath,
+      JSON.stringify({
+        version: 1,
+        jobs: [{ ...job(), remoteUrl: 'https://user:token@github.com/acme/prtokens.git' }],
+      }),
+    );
+
+    const queue = scrubPendingQueue(queuePath);
+
+    expect(queue.jobs).toHaveLength(1);
+    expect(queue.jobs[0]).not.toHaveProperty('remoteUrl');
+    expect(readFileSync(queuePath, 'utf8')).not.toContain('remoteUrl');
+    expect(readFileSync(queuePath, 'utf8')).not.toContain('user:token');
+  });
+
+  it('does not run two process-lock callbacks at the same time', async () => {
+    const queuePath = tempQueuePath();
+    const calls: string[] = [];
+
+    const firstResult = await withPendingQueueProcessLock(queuePath, async () => {
+      const secondResult = await withPendingQueueProcessLock(queuePath, async () => {
+        calls.push('second');
+        return 'second';
+      });
+      calls.push('first');
+      expect(secondResult).toBeUndefined();
+      return 'first';
+    });
+
+    expect(firstResult).toBe('first');
+    expect(calls).toEqual(['first']);
+    expect(existsSync(`${queuePath}.process.lock`)).toBe(false);
   });
 
   it('skips persisted jobs with invalid dates or attempts', () => {
