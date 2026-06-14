@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -5,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { isEntrypoint, runCli } from '../src/cli.js';
 import { renderPrComment } from '../src/comment-renderer.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo } from '../src/pr-posting.js';
 
 function usageEvent(overrides = {}) {
   return {
@@ -73,11 +75,13 @@ function allUsage(overrides = {}) {
 }
 
 function createDeps(overrides = {}) {
-  return {
+  const deps = {
     readAllUsage: vi.fn().mockResolvedValue(allUsage()),
     resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
     upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
+    runGhPrCreate: vi.fn().mockResolvedValue(0),
+    runGitLsRemote: vi.fn().mockResolvedValue('abcdef1234567890'),
     runPreflight: vi.fn().mockReturnValue({
       checks: [
         { name: 'Node.js', status: 'ok', message: 'Node.js 22.13.0 satisfies >=22.13.0.' },
@@ -94,11 +98,47 @@ function createDeps(overrides = {}) {
       hookAction: 'installed',
       coreHooksPathAction: 'set',
     }),
+    queuePath: '/state/prtokens/pending-prs.json',
+    readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    scrubPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    writePendingQueue: vi.fn(),
+    enqueuePendingPr: vi.fn(),
+    processPendingPrJobs: vi.fn().mockResolvedValue(undefined),
+    withPendingQueueProcessLock: vi.fn((_queuePath, fn) => fn()),
+    now: vi.fn(() => new Date('2026-06-14T00:00:00.000Z')),
+    sleep: vi.fn().mockResolvedValue(undefined),
+    queueRetryDelayMs: 1,
+    queueProcessMaxPasses: 3,
     cwd: '/repo',
     stdout: vi.fn(),
     stderr: vi.fn(),
     ...overrides,
   };
+  return {
+    ...deps,
+    mergePendingQueue: 'mergePendingQueue' in overrides
+      ? overrides.mergePendingQueue
+      : vi.fn((queuePath, mergeFn) => {
+        const merged = mergeFn(deps.readPendingQueue(queuePath));
+        deps.writePendingQueue(queuePath, merged);
+        return merged;
+      }),
+  };
+}
+
+function createSpawnChild({ stdout = '', stderr = '', code = 0 } = {}) {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter & { setEncoding(encoding: string): void };
+    stderr: EventEmitter & { setEncoding(encoding: string): void };
+  };
+  child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  child.stderr = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  queueMicrotask(() => {
+    if (stdout.length > 0) child.stdout.emit('data', stdout);
+    if (stderr.length > 0) child.stderr.emit('data', stderr);
+    child.emit('close', code);
+  });
+  return child;
 }
 
 beforeEach(() => {
@@ -180,6 +220,605 @@ describe('runCli', () => {
 
     expect(deps.installGlobalPrePushHook).not.toHaveBeenCalled();
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+  });
+
+  it('prints queue status', async () => {
+    const deps = createDeps({
+      scrubPendingQueue: vi.fn().mockReturnValue({
+        version: 1,
+        jobs: [{
+          id: 'job-1',
+          repoRoot: '/repo',
+          repository: 'acme/prtokens',
+          remoteName: 'origin',
+          localBranch: 'feature/prtokens',
+          remoteBranch: 'feature/prtokens',
+          headSha: 'abcdef1234567890',
+          queuedAt: '2026-06-14T00:00:00.000Z',
+          attempts: 0,
+          status: 'pending',
+          lastResult: 'waiting for PR',
+        }],
+      }),
+    });
+
+    await expect(runCli(['status'], deps)).resolves.toBe(0);
+
+    expect(deps.scrubPendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json');
+    expect(deps.stdout).toHaveBeenCalledWith(expect.stringContaining('Pending PR posts'));
+  });
+
+  it('wraps gh pr create and posts after success', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR', '--body', 'Body'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'My PR', '--body', 'Body']);
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves gh pr create failure exit code and does not post', async () => {
+    const deps = createDeps({ runGhPrCreate: vi.fn().mockResolvedValue(2) });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(2);
+
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('does not fail successful PR creation when comment posting fails', async () => {
+    const deps = createDeps({
+      upsertPrComment: vi.fn().mockResolvedValue({ ok: false, renderedMarkdown: 'markdown', error: 'api failed' }),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('prtokens could not post the PR comment: api failed');
+  });
+
+  it('does not fail successful PR creation when posting throws', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockRejectedValue(new Error('usage failed')),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('prtokens could not post the PR comment: usage failed');
+  });
+
+  it('returns failure with setup guidance when gh pr create cannot spawn', async () => {
+    const deps = createDeps({
+      runGhPrCreate: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(1);
+
+    expect(deps.stderr).toHaveBeenCalledWith(ghSetupMessage);
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('forwards gh pr create args unchanged when no separator is present', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--title', 'My PR', '--body', 'Body'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'My PR', '--body', 'Body']);
+  });
+
+  it('preserves non-leading separator in gh pr create args', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--title', 'T', '--', '--body', 'B'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'T', '--', '--body', 'B']);
+  });
+
+  it('enqueues metadata when hook mode finds no PR', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'git@github.com:acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+      cwd: '/repo',
+      branch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+    });
+    expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      status: 'pending',
+    }));
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fail pushes when hook metadata parsing fails', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['__hook-pushed-ref', '--remote-name', 'origin'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('Missing required hook pushed-ref metadata.');
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.enqueuePendingPr).not.toHaveBeenCalled();
+  });
+
+  it('swallows hook enqueue errors so pushes can continue', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+      enqueuePendingPr: vi.fn(() => {
+        throw new Error('state path unavailable');
+      }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'git@github.com:acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('state path unavailable');
+    expect(deps.processPendingPrJobs).not.toHaveBeenCalled();
+  });
+
+  it('does not persist raw remote URLs from hook metadata', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'https://user:token@github.com/acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.enqueuePendingPr).toHaveBeenCalledTimes(1);
+    expect(deps.enqueuePendingPr.mock.calls[0]?.[1]).not.toHaveProperty('remoteUrl');
+  });
+
+  it('enqueues hook metadata when remote URL is omitted', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      status: 'pending',
+    }));
+    expect(deps.enqueuePendingPr.mock.calls[0]?.[1]).not.toHaveProperty('remoteUrl');
+  });
+
+  it('merges process-queue writes with concurrently enqueued jobs', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const concurrentJob = {
+      id: 'job-concurrent',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/other',
+      remoteBranch: 'feature/other',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:01:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const processedJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: 1,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        options.writeQueue({ version: 1, jobs: [processedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+    expect(deps.mergePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.any(Function));
+    expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [processedJob, concurrentJob],
+    });
+  });
+
+  it('continues processing when a concurrent enqueue leaves a new retryable pending job', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const concurrentJob = {
+      id: 'job-concurrent',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/other',
+      remoteBranch: 'feature/other',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:00:30.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const completedOriginalJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const completedConcurrentJob = {
+      ...concurrentJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #43',
+    };
+    const deps = createDeps({
+      queueRetryDelayMs: 10,
+      queueProcessMaxPasses: 3,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedOriginalJob, concurrentJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedOriginalJob, concurrentJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        if (options.queue.jobs.some((job) => job.id === 'job-concurrent')) {
+          options.writeQueue({ version: 1, jobs: [completedOriginalJob, completedConcurrentJob] });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedOriginalJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledWith(10);
+    expect(deps.writePendingQueue).toHaveBeenLastCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [completedOriginalJob, completedConcurrentJob],
+    });
+  });
+
+  it('processes queued jobs against the queued remote branch and head SHA', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'HEAD',
+      remoteBranch: 'feature/queued',
+      headSha: 'feedface1234',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: 1,
+      readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [originalJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        await options.post(originalJob);
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+      cwd: '/repo',
+      branch: 'feature/queued',
+      headSha: 'feedface1234',
+    });
+  });
+
+  it('exits process-queue without processing when another processor holds the lock', async () => {
+    const deps = createDeps({
+      withPendingQueueProcessLock: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.withPendingQueueProcessLock).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.any(Function));
+    expect(deps.processPendingPrJobs).not.toHaveBeenCalled();
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('processes queue with remote head checks', async () => {
+    const deps = createDeps({
+      readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    const call = deps.processPendingPrJobs.mock.calls[0]?.[0];
+    await expect(call.readRemoteHead({
+      id: 'job-remote-head',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    })).resolves.toBe('abcdef1234567890');
+    expect(deps.runGitLsRemote).toHaveBeenCalledWith('/repo', 'origin', 'refs/heads/feature/prtokens');
+  });
+
+  it('fails closed when default remote head command exits non-zero', async () => {
+    vi.resetModules();
+    const spawn = vi.fn(() => createSpawnChild({ stderr: 'fatal: remote error\n', code: 2 }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const job = {
+        id: 'job-remote-head',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: '1234567890abcdef',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+        lastResult: 'waiting for PR',
+      };
+      const deps = createDeps({
+        runGitLsRemote: undefined,
+        readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+        processPendingPrJobs: vi.fn(async (options) => {
+          await expect(options.readRemoteHead(job)).rejects.toThrow('git ls-remote failed for refs/heads/feature/prtokens on origin: fatal: remote error');
+        }),
+      });
+
+      await expect(runCliWithMockedSpawn(['__process-queue'], deps)).resolves.toBe(0);
+
+      expect(spawn).toHaveBeenCalledWith('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/feature/prtokens'], { cwd: '/repo', stdio: ['ignore', 'pipe', 'pipe'] });
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
+  });
+
+  it('fails closed when default remote head command returns no SHA', async () => {
+    vi.resetModules();
+    const spawn = vi.fn(() => createSpawnChild({ code: 0 }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const job = {
+        id: 'job-remote-head',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: '1234567890abcdef',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+        lastResult: 'waiting for PR',
+      };
+      const deps = createDeps({
+        runGitLsRemote: undefined,
+        readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+        processPendingPrJobs: vi.fn(async (options) => {
+          await expect(options.readRemoteHead(job)).rejects.toThrow('git ls-remote returned no SHA for refs/heads/feature/prtokens on origin');
+        }),
+      });
+
+      await expect(runCliWithMockedSpawn(['__process-queue'], deps)).resolves.toBe(0);
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
+  });
+
+  it('retries pending process-queue jobs with a bounded delay', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const pendingAfterFirstPass = {
+      ...originalJob,
+      attempts: 1,
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'No pull request found for current branch.',
+    };
+    const completedAfterSecondPass = {
+      ...pendingAfterFirstPass,
+      attempts: 2,
+      status: 'completed',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      queueRetryDelayMs: 10,
+      queueProcessMaxPasses: 3,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [pendingAfterFirstPass] })
+        .mockReturnValueOnce({ version: 1, jobs: [pendingAfterFirstPass] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        if (options.queue.jobs[0]?.attempts === 0) {
+          options.writeQueue({ version: 1, jobs: [pendingAfterFirstPass] });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedAfterSecondPass] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledWith(10);
+    expect(deps.writePendingQueue).toHaveBeenLastCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [completedAfterSecondPass],
+    });
+  });
+
+  it('keeps a more advanced concurrent same-ID queue update', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const processedJob = {
+      ...originalJob,
+      attempts: 1,
+      lastAttemptAt: '2026-06-14T00:00:10.000Z',
+      lastResult: 'No pull request found for current branch.',
+    };
+    const concurrentlyAdvancedJob = {
+      ...originalJob,
+      attempts: 2,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:20.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentlyAdvancedJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        options.writeQueue({ version: 1, jobs: [processedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [concurrentlyAdvancedJob],
+    });
+  });
+
+  it('keeps terminal processed jobs over pending same-ID queue updates', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const processedCompletedJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:10.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const concurrentPendingJob = {
+      ...originalJob,
+      attempts: 2,
+      lastAttemptAt: '2026-06-14T00:00:20.000Z',
+      lastResult: 'No pull request found for current branch.',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: 1,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentPendingJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        options.writeQueue({ version: 1, jobs: [processedCompletedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [processedCompletedJob],
+    });
+  });
+
+  it('uses the shared posting flow for default report mode', async () => {
+    const deps = createDeps();
+
+    await expect(runCli([], deps)).resolves.toBe(0);
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+    expect(deps.readAllUsage).toHaveBeenCalledTimes(1);
+    expect(deps.ensureGhReady).toHaveBeenCalledTimes(1);
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
   });
 
   it('passes resolved worktree roots to usage readers', async () => {
@@ -553,6 +1192,52 @@ describe('runCli', () => {
     expect(payload.markdown).toContain('| `abcdef1` | Add CLI wiring | 100 | 10 | ~$1.00 | 1 |');
     expect(payload.markdown).not.toContain('uncommitted tail');
     expect(payload.markdown).not.toContain('~$3.00');
+  });
+});
+
+describe('postPrtokensForCurrentRepo', () => {
+  it('passes the provided runner to PR resolution', async () => {
+    const deps = createDeps();
+    const runner = { run: vi.fn() };
+
+    await expect(postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: true,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+      runner,
+    })).resolves.toMatchObject({ kind: 'dry-run' });
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', runner });
+  });
+
+  it('normalizes gh setup failures from PR resolution', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),
+    });
+
+    await expect(postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    })).resolves.toEqual({ kind: 'gh-not-ready', message: ghSetupMessage });
+
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
+    expect(deps.ensureGhReady).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 });
 

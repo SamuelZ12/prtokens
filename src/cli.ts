@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { attributeUsageToCommits } from './attribution-engine.js';
-import { renderPrComment, type RenderAuthorInput } from './comment-renderer.js';
-import { defaultCommandRunner, resolvePullRequest } from './git-resolver.js';
+import { resolvePullRequest } from './git-resolver.js';
 import { ensureGhReady, upsertPrComment } from './github-poster.js';
 import {
   createDefaultHookInstallerDeps,
@@ -18,11 +17,15 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { priceAttributionResult, type PricedAttributionBucket, type PricedAttributionResult } from './pricing.js';
-import { readAllUsage, type UsageDiagnostics } from './usage-readers.js';
-import type { AgentName, CommitRecord, UsageEvent } from './types.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, scrubPendingQueue, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
+import { processPendingPrJobs } from './pending-pr-worker.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
+import { readAllUsage } from './usage-readers.js';
 
-type AgentSummary = NonNullable<RenderAuthorInput['agents']>[number];
+const queueRetryWindowMs = 30 * 60_000;
+const queueRetentionMs = 24 * 60 * 60_000;
+const defaultQueueRetryDelayMs = 30_000;
+const defaultQueueProcessMaxPasses = Math.ceil(queueRetryWindowMs / defaultQueueRetryDelayMs);
 
 export interface CliDeps {
   cwd: string;
@@ -32,8 +35,22 @@ export interface CliDeps {
   resolvePullRequest: typeof resolvePullRequest;
   ensureGhReady: typeof ensureGhReady;
   upsertPrComment: typeof upsertPrComment;
+  runGhPrCreate(args: string[]): Promise<number>;
+  runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Promise<string | undefined>;
   runPreflight: () => PreflightResult;
   installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
+  queuePath: string;
+  readPendingQueue: typeof readPendingQueue;
+  scrubPendingQueue: typeof scrubPendingQueue;
+  writePendingQueue: typeof writePendingQueue;
+  mergePendingQueue: typeof mergePendingQueue;
+  enqueuePendingPr: typeof enqueuePendingPr;
+  processPendingPrJobs: typeof processPendingPrJobs;
+  withPendingQueueProcessLock: typeof withPendingQueueProcessLock;
+  now(): Date;
+  sleep(ms: number): Promise<void>;
+  queueRetryDelayMs: number;
+  queueProcessMaxPasses: number;
 }
 
 interface CliFlags {
@@ -43,13 +60,28 @@ interface CliFlags {
   prNumber?: number;
 }
 
-const noUsageMessage = 'No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).';
-const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
-
 export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promise<number> {
   const cliDeps = withDefaultDeps(deps);
   if (argv[0] === 'init') {
     return runInit(argv.slice(1), cliDeps);
+  }
+
+  if (argv[0] === 'pr' && argv[1] === 'create') {
+    return runPrCreate(argv.slice(2), cliDeps);
+  }
+
+  if (argv[0] === 'status') {
+    const queue = cliDeps.scrubPendingQueue(cliDeps.queuePath);
+    cliDeps.stdout(formatQueueStatus(queue, cliDeps.now()));
+    return 0;
+  }
+
+  if (argv[0] === '__hook-pushed-ref') {
+    return runHookPushedRef(argv.slice(1), cliDeps);
+  }
+
+  if (argv[0] === '__process-queue') {
+    return runProcessQueue(cliDeps);
   }
 
   const flags = parseCliFlags(argv, cliDeps.stderr);
@@ -57,12 +89,21 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     return 1;
   }
 
-  let resolvedPr;
   try {
-    resolvedPr = await cliDeps.resolvePullRequest({
+    const result = await postPrtokensForCurrentRepo({
       cwd: cliDeps.cwd,
+      dryRun: flags.dryRun,
+      json: flags.json,
+      verbose: flags.verbose,
       ...(flags.prNumber === undefined ? {} : { prNumber: flags.prNumber }),
+      stdout: cliDeps.stdout,
+      stderr: cliDeps.stderr,
+      readAllUsage: cliDeps.readAllUsage,
+      resolvePullRequest: cliDeps.resolvePullRequest,
+      ensureGhReady: cliDeps.ensureGhReady,
+      upsertPrComment: cliDeps.upsertPrComment,
     });
+    return printPostResult(result, cliDeps.stdout, cliDeps.stderr);
   } catch (error) {
     if (isGhSetupError(error)) {
       cliDeps.stderr(ghSetupMessage);
@@ -71,77 +112,6 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
 
     throw error;
   }
-  if (resolvedPr.kind === 'no-pr') {
-    cliDeps.stdout(resolvedPr.message);
-    return 0;
-  }
-
-  const usage = await cliDeps.readAllUsage({
-    repoRoot: resolvedPr.repoRoot,
-    repoRootAliases: resolvedPr.worktreeRoots,
-  });
-  if (flags.verbose) {
-    printDiagnostics(usage.diagnostics, cliDeps.stderr);
-  }
-
-  if (usage.events.length === 0) {
-    cliDeps.stdout(noUsageMessage);
-    return 0;
-  }
-
-  const attribution = attributeUsageToCommits({
-    events: usage.events,
-    commits: resolvedPr.commits,
-    branch: resolvedPr.branch,
-  });
-  const priced = priceAttributionResult(attribution);
-  const agentTotals = toAgentSummaries(usage.events, resolvedPr.commits, resolvedPr.branch);
-  const currentAuthor = toRenderAuthorInput(priced, resolvedPr.pr.currentUserLogin ?? resolvedPr.pr.authorLogin, agentTotals);
-  const renderMarkdown = (existingBody?: string) => renderPrComment({ existingBody, currentAuthor });
-
-  if (flags.dryRun) {
-    const markdown = renderMarkdown();
-    cliDeps.stdout(markdown);
-    return 0;
-  }
-
-  if (flags.json) {
-    const markdown = renderMarkdown();
-    cliDeps.stdout(
-      JSON.stringify({
-        pr: resolvedPr.pr,
-        attribution,
-        pricing: {
-          totalCostUsd: priced.totalCostUsd,
-          warnings: priced.warnings ?? [],
-          buckets: priced.buckets,
-          uncommittedTail: priced.uncommittedTail,
-        },
-        agentTotals,
-        diagnostics: usage.diagnostics,
-        markdown,
-      }),
-    );
-    return 0;
-  }
-
-  const ghReady = await cliDeps.ensureGhReady(defaultCommandRunner);
-  if (!ghReady.ok) {
-    cliDeps.stderr(ghReady.message);
-    return 1;
-  }
-
-  const postResult = await cliDeps.upsertPrComment({
-    runner: defaultCommandRunner,
-    repository: resolvedPr.pr.repository,
-    prNumber: resolvedPr.pr.number,
-    renderMarkdown,
-  });
-  if (!postResult.ok) {
-    cliDeps.stdout(postResult.renderedMarkdown);
-  }
-
-  return 0;
 }
 
 export async function main(): Promise<number> {
@@ -173,8 +143,22 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     resolvePullRequest: deps.resolvePullRequest ?? resolvePullRequest,
     ensureGhReady: deps.ensureGhReady ?? ensureGhReady,
     upsertPrComment: deps.upsertPrComment ?? upsertPrComment,
+    runGhPrCreate: deps.runGhPrCreate ?? runGhPrCreate,
+    runGitLsRemote: deps.runGitLsRemote ?? runGitLsRemote,
     runPreflight: deps.runPreflight ?? (() => runPreflight(hookInstallerDeps)),
     installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
+    queuePath: deps.queuePath ?? defaultQueuePath(process.env),
+    readPendingQueue: deps.readPendingQueue ?? readPendingQueue,
+    scrubPendingQueue: deps.scrubPendingQueue ?? scrubPendingQueue,
+    writePendingQueue: deps.writePendingQueue ?? writePendingQueue,
+    mergePendingQueue: deps.mergePendingQueue ?? mergePendingQueue,
+    enqueuePendingPr: deps.enqueuePendingPr ?? enqueuePendingPr,
+    processPendingPrJobs: deps.processPendingPrJobs ?? processPendingPrJobs,
+    withPendingQueueProcessLock: deps.withPendingQueueProcessLock ?? withPendingQueueProcessLock,
+    now: deps.now ?? (() => new Date()),
+    sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    queueRetryDelayMs: deps.queueRetryDelayMs ?? defaultQueueRetryDelayMs,
+    queueProcessMaxPasses: deps.queueProcessMaxPasses ?? defaultQueueProcessMaxPasses,
   };
 }
 
@@ -185,6 +169,40 @@ function resolvePrtokensBinPath(): string {
   } catch {
     return entrypointPath;
   }
+}
+
+function runGhPrCreate(args: string[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('gh', ['pr', 'create', ...args], { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
+function runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['ls-remote', '--exit-code', remoteName, remoteRef], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        const details = stderr.trim();
+        reject(new Error(`git ls-remote failed for ${remoteRef} on ${remoteName}${details.length > 0 ? `: ${details}` : ` with exit code ${code ?? 'unknown'}`}`));
+        return;
+      }
+      const sha = stdout.trim().split(/\s+/)[0];
+      if (!sha) {
+        reject(new Error(`git ls-remote returned no SHA for ${remoteRef} on ${remoteName}`));
+        return;
+      }
+      resolve(sha);
+    });
+  });
 }
 
 function runInit(argv: string[], deps: CliDeps): number {
@@ -202,6 +220,240 @@ function runInit(argv: string[], deps: CliDeps): number {
 
   deps.stdout(formatInitResult(install, preflight));
   return 0;
+}
+
+async function runPrCreate(argv: string[], deps: CliDeps): Promise<number> {
+  const ghArgs = argv[0] === '--' ? argv.slice(1) : argv;
+  let createExitCode;
+  try {
+    createExitCode = await deps.runGhPrCreate(ghArgs);
+  } catch (error) {
+    deps.stderr(isGhSetupError(error) ? ghSetupMessage : `gh pr create failed: ${formatErrorMessage(error)}`);
+    return 1;
+  }
+  if (createExitCode !== 0) return createExitCode;
+
+  try {
+    const result = await postPrtokensForCurrentRepo({
+      cwd: deps.cwd,
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    });
+
+    if (result.kind === 'post-failed') {
+      deps.stderr(`prtokens could not post the PR comment: ${result.error}`);
+      return 0;
+    }
+    if (result.kind === 'gh-not-ready') {
+      deps.stderr(result.message);
+      return 0;
+    }
+
+    printPostResult(result, deps.stdout, deps.stderr);
+    return 0;
+  } catch (error) {
+    deps.stderr(`prtokens could not post the PR comment: ${formatErrorMessage(error)}`);
+    return 0;
+  }
+}
+
+interface HookPushedRefFlags {
+  remoteName: string;
+  localBranch: string;
+  remoteBranch: string;
+  headSha: string;
+}
+
+async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> {
+  const flags = parseHookPushedRefFlags(argv, deps.stderr);
+  if (flags === undefined) return 0;
+
+  try {
+    const result = await postPrtokensForCurrentRepo({
+      cwd: deps.cwd,
+      dryRun: false,
+      json: false,
+      verbose: false,
+      branch: flags.remoteBranch,
+      headSha: flags.headSha,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    });
+
+    if (result.kind === 'no-pr') {
+      const queuedAt = deps.now().toISOString();
+      deps.enqueuePendingPr(deps.queuePath, {
+        id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
+        repoRoot: deps.cwd,
+        remoteName: flags.remoteName,
+        localBranch: flags.localBranch,
+        remoteBranch: flags.remoteBranch,
+        headSha: flags.headSha,
+        queuedAt,
+        attempts: 0,
+        status: 'pending',
+        lastResult: result.message,
+      });
+      await scheduleProcessQueue(deps);
+      return 0;
+    }
+
+    if (result.kind === 'gh-not-ready' || result.kind === 'post-failed') {
+      return 0;
+    }
+    printPostResult(result, deps.stdout, deps.stderr);
+    return 0;
+  } catch (error) {
+    deps.stderr(error instanceof Error ? error.message : String(error));
+    return 0;
+  }
+}
+
+async function runProcessQueue(deps: CliDeps): Promise<number> {
+  await deps.withPendingQueueProcessLock(deps.queuePath, async () => {
+    const maxPasses = Math.max(1, deps.queueProcessMaxPasses);
+    for (let pass = 0; pass < maxPasses; pass += 1) {
+      const now = deps.now();
+      const originalQueue = deps.readPendingQueue(deps.queuePath);
+      const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
+      let queueAfterPass: PendingPrQueue | undefined;
+
+      await deps.processPendingPrJobs({
+        queue: originalQueue,
+        now,
+        retryWindowMs: queueRetryWindowMs,
+        retentionMs: queueRetentionMs,
+        readRemoteHead: (job) => deps.runGitLsRemote(job.repoRoot, job.remoteName, `refs/heads/${job.remoteBranch}`),
+        post: (job) => postPrtokensForCurrentRepo({
+          cwd: job.repoRoot,
+          dryRun: false,
+          json: false,
+          verbose: false,
+          branch: job.remoteBranch,
+          headSha: job.headSha,
+          stdout: deps.stdout,
+          stderr: deps.stderr,
+          readAllUsage: deps.readAllUsage,
+          resolvePullRequest: deps.resolvePullRequest,
+          ensureGhReady: deps.ensureGhReady,
+          upsertPrComment: deps.upsertPrComment,
+        }),
+        writeQueue: (queue) => {
+          queueAfterPass = deps.mergePendingQueue(deps.queuePath, (latestQueue) => mergeProcessedQueue(originalJobIds, queue, latestQueue));
+        },
+      });
+
+      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now)) {
+        break;
+      }
+      await deps.sleep(deps.queueRetryDelayMs);
+    }
+  });
+  return 0;
+}
+
+function mergeProcessedQueue(originalJobIds: Set<string>, processedQueue: PendingPrQueue, latestQueue: PendingPrQueue): PendingPrQueue {
+  const latestById = new Map(latestQueue.jobs.map((job) => [job.id, job]));
+  return {
+    version: 1,
+    jobs: [
+      ...processedQueue.jobs
+        .filter((job) => originalJobIds.has(job.id))
+        .map((job) => chooseMergedJob(job, latestById.get(job.id))),
+      ...latestQueue.jobs.filter((job) => !originalJobIds.has(job.id)),
+    ],
+  };
+}
+
+function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date): boolean {
+  return queue.jobs.some((job) => job.status === 'pending' && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs);
+}
+
+function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | undefined): PendingPrJob {
+  if (latestJob === undefined) return processedJob;
+  return isMoreAdvancedJob(latestJob, processedJob) ? latestJob : processedJob;
+}
+
+function isMoreAdvancedJob(candidate: PendingPrJob, baseline: PendingPrJob): boolean {
+  if (isTerminalStatus(baseline.status) && candidate.status === 'pending') return false;
+  if (isTerminalStatus(candidate.status) && baseline.status === 'pending') return true;
+  if (candidate.attempts !== baseline.attempts) return candidate.attempts > baseline.attempts;
+
+  const candidateAttemptAt = parseTime(candidate.lastAttemptAt);
+  const baselineAttemptAt = parseTime(baseline.lastAttemptAt);
+  return candidateAttemptAt !== undefined && (baselineAttemptAt === undefined || candidateAttemptAt > baselineAttemptAt);
+}
+
+function isTerminalStatus(status: PendingPrJob['status']): boolean {
+  return status === 'completed' || status === 'blocked' || status === 'failed';
+}
+
+function parseTime(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : undefined;
+}
+
+function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => void): HookPushedRefFlags | undefined {
+  try {
+    const parsed = parseArgs({
+      args: argv,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        'remote-name': { type: 'string' },
+        'remote-url': { type: 'string' },
+        'local-branch': { type: 'string' },
+        'remote-branch': { type: 'string' },
+        'head-sha': { type: 'string' },
+      },
+    });
+    const values = parsed.values;
+    if (values['remote-name'] && values['local-branch'] && values['remote-branch'] && values['head-sha']) {
+      return {
+        remoteName: values['remote-name'],
+        localBranch: values['local-branch'],
+        remoteBranch: values['remote-branch'],
+        headSha: values['head-sha'],
+      };
+    }
+    stderr('Missing required hook pushed-ref metadata.');
+    return undefined;
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+}
+
+async function scheduleProcessQueue(deps: CliDeps): Promise<void> {
+  try {
+    if (deps.processPendingPrJobs === processPendingPrJobs) {
+      spawnDetachedProcessQueue();
+    } else {
+      await runProcessQueue(deps);
+    }
+  } catch (error) {
+    deps.stderr(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function spawnDetachedProcessQueue(): void {
+  const child = spawn(process.execPath, [resolvePrtokensBinPath(), '__process-queue'], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
 }
 
 function parseInitFlags(argv: string[], stderr: (message: string) => void): { dryRun: boolean } | undefined {
@@ -316,21 +568,6 @@ function parseCliFlags(argv: string[], stderr: (message: string) => void): CliFl
   };
 }
 
-function printDiagnostics(diagnostics: UsageDiagnostics, stderr: (message: string) => void): void {
-  const agents = ['claude-code', 'codex', 'opencode'] satisfies AgentName[];
-
-  for (const agent of agents) {
-    const source = diagnostics[agent];
-    stderr(`${agent}: scanned-file-count: ${source.scannedFileCount}`);
-    stderr(`${agent}: malformed-line-count: ${source.malformedLineCount}`);
-    stderr(`${agent}: skipped-line-count: ${source.skippedLineCount}`);
-    stderr(`${agent}: dedupe-count: ${source.dedupedEventCount}`);
-    for (const warning of source.warningMessages) {
-      stderr(`${agent}: ${warning}`);
-    }
-  }
-}
-
 function isGhSetupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : '';
   const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr) : '';
@@ -344,62 +581,6 @@ function isGhSetupError(error: unknown): boolean {
   );
 }
 
-function toRenderAuthorInput(
-  priced: PricedAttributionResult,
-  authorLogin: string,
-  agents?: RenderAuthorInput['agents'],
-): RenderAuthorInput {
-  const rows = allPricedBuckets(priced).map((bucket) => ({
-    sha: bucket.commitSha ?? bucket.label ?? 'uncommitted',
-    message: bucket.message ?? bucket.label ?? '',
-    inputTokens: bucket.inputTokens,
-    outputTokens: bucket.outputTokens,
-    cacheWriteTokens: bucket.cacheWriteTokens,
-    cacheReadTokens: bucket.cacheReadTokens,
-    costUsd: bucket.costUsd,
-    sessionCount: bucket.sessionCount,
-  }));
-
-  return {
-    login: authorLogin,
-    totalCostUsd: priced.totalCostUsd,
-    inputTokens: priced.totals.inputTokens,
-    outputTokens: priced.totals.outputTokens,
-    cacheWriteTokens: priced.totals.cacheWriteTokens,
-    cacheReadTokens: priced.totals.cacheReadTokens,
-    sessionCount: priced.totals.sessionCount,
-    models: [...new Set(allPricedBuckets(priced).flatMap((bucket) => bucket.models))],
-    ...(agents === undefined ? {} : { agents }),
-    attributedPercent: priced.coverage.attributedPercent,
-    lowConfidencePercent: priced.coverage.lowConfidencePercent,
-    rows,
-  };
-}
-
-function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch: string): AgentSummary[] {
-  const agents = ['claude-code', 'codex', 'opencode'] satisfies AgentName[];
-  const summaries: AgentSummary[] = [];
-
-  for (const agent of agents) {
-    const agentEvents = events.filter((event) => event.agent === agent);
-    if (agentEvents.length === 0) continue;
-
-    const attribution = attributeUsageToCommits({ events: agentEvents, commits, branch });
-    const priced = priceAttributionResult(attribution);
-    if (priced.totals.attributedEventCount === 0) continue;
-
-    summaries.push({
-      agent,
-      costUsd: priced.totalCostUsd,
-      inputTokens: priced.totals.inputTokens,
-      outputTokens: priced.totals.outputTokens,
-      sessionCount: priced.totals.sessionCount,
-    });
-  }
-
-  return summaries.sort((left, right) => right.costUsd - left.costUsd);
-}
-
-function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
-  return priced.buckets;
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
