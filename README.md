@@ -58,15 +58,17 @@ prtokens finds the open PR for your branch, reads your local agent transcripts, 
 ## Commands
 
 
-| Command                   | What it does                                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `prtokens`                | Resolve the current branch's open PR, read local usage, and post or update the comment.                                     |
-| `prtokens --pr <n>`       | Target PR number `<n>` instead of auto-detecting from the branch.                                                           |
-| `prtokens --dry-run`      | Print the rendered comment to stdout; post nothing.                                                                         |
-| `prtokens --json`         | Print a JSON payload (rendered markdown, attribution, pricing, per-agent totals, and per-source diagnostics); post nothing. |
-| `prtokens --verbose`      | Also print per-source reader diagnostics to stderr.                                                                         |
-| `prtokens init`           | Install or update the optional global pre-push hook (see below).                                                            |
-| `prtokens init --dry-run` | Preview the hook changes without writing files.                                                                             |
+| Command                            | What it does                                                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `prtokens`                         | Resolve the current branch's open PR, read local usage, and post or update the comment.                                     |
+| `prtokens --pr <n>`                | Target PR number `<n>` instead of auto-detecting from the branch.                                                           |
+| `prtokens --dry-run`               | Print the rendered comment to stdout; post nothing.                                                                         |
+| `prtokens --json`                  | Print a JSON payload (rendered markdown, attribution, pricing, per-agent totals, and per-source diagnostics); post nothing. |
+| `prtokens --verbose`               | Also print per-source reader diagnostics to stderr.                                                                         |
+| `prtokens init`                    | Install or update the optional global pre-push hook (see below).                                                            |
+| `prtokens init --dry-run`          | Preview the hook changes without writing files.                                                                             |
+| `prtokens status`                  | Show pending, blocked, failed, and recently completed automatic PR comment jobs.                                            |
+| `prtokens pr create -- <gh args>`  | Run `gh pr create <gh args>` and post the prtokens comment immediately after successful PR creation.                        |
 
 
 ## Requirements
@@ -82,6 +84,8 @@ prtokens finds the open PR for your branch, reads your local agent transcripts, 
 
 Claude Code transcripts, Codex rollouts, and OpenCode databases never leave your machine. The PR comment contains aggregate numbers only — token counts, dollar estimates, session counts, model and agent names, and commit metadata already visible in the PR.
 
+The automatic queue stores metadata only: repository path, remote and branch names, pushed head SHA, timestamps, attempt count, status, and the last result message. It never stores transcripts, prompts, completions, raw usage events, token details, or rendered comment markdown.
+
 ## Automatic runs (optional pre-push hook)
 
 To run prtokens automatically as a best-effort background task on every `git push` from this machine, install it globally and run the setup command:
@@ -95,7 +99,17 @@ Preview the changes first with `prtokens init --dry-run`.
 
 `prtokens init` writes a sentinel-wrapped managed block into your global `pre-push` hook. If an absolute global `core.hooksPath` is already set, prtokens writes the hook there; otherwise it creates `~/.config/git/hooks/pre-push` and points `core.hooksPath` at it. A *relative* global `core.hooksPath` is rejected — prtokens cannot safely write one global hook file for every repository — so set an absolute path or use manual setup. The Node.js, GitHub CLI, and `gh auth login` checks are informational, so the hook still installs if a prerequisite is missing and you can fix it later.
 
-**Caveats:** prtokens must be on `PATH` for Git hooks, or the absolute fallback path baked in by `prtokens init` must stay valid; `pre-push` may not observe newly pushed commits immediately, especially on first pushes or PR creation; a repository with a local `core.hooksPath` bypasses the global hook; and `gh pr create` on an already-pushed branch performs no push, so it will not trigger the hook.
+**Caveats:** prtokens must be on `PATH` for Git hooks, or the absolute fallback path baked in by `prtokens init` must stay valid; a repository with a local `core.hooksPath` bypasses the global hook; and `gh pr create` on an already-pushed branch performs no push, so it will not trigger the hook.
+
+When a push has an open PR, the hook posts or updates the comment immediately in the background. When the push happens before the PR exists, prtokens records a metadata-only pending job and retries for 30 minutes. Queue records are retained locally for 24 hours so `prtokens status` can explain pending, blocked, failed, and completed work.
+
+For the most deterministic local workflow, create PRs through:
+
+```bash
+prtokens pr create -- --title "My PR" --body "Description"
+```
+
+Everything after `--` is passed to `gh pr create`. If PR creation succeeds, prtokens resolves the new PR and posts the comment before exiting. If comment posting fails, the PR creation still succeeds and prtokens prints the posting error.
 
 To install by hand — or in a git config prtokens will not modify automatically — run `prtokens init --dry-run` to print the exact managed block and its target path, then place the block there yourself.
 
@@ -105,6 +119,9 @@ To install by hand — or in a git config prtokens will not modify automatically
 - No transcripts: prints a hint and exits 0.
 - Missing or unauthenticated `gh`: prints one-line setup instructions and exits 1.
 - Comment post failure: prints the rendered markdown so you can paste it manually and exits 0.
+- Hook queued branch with no PR yet: records local metadata and exits 0.
+- `prtokens pr create` with failed `gh pr create`: returns the `gh` exit code and does not post.
+- `prtokens pr create` with successful PR creation but comment failure: prints the posting error and exits 0.
 
 ## Pricing
 
