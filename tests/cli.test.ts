@@ -1217,6 +1217,100 @@ describe('postPrtokensForCurrentRepo', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', runner });
   });
 
+  it('attributes Codex usage after a branch switch when session branch metadata is stale', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
+        events: [
+          usageEvent({
+            agent: 'codex',
+            timestamp: '2024-01-01T00:07:00.000Z',
+            model: 'gpt-5-codex',
+            inputTokens: 300,
+            outputTokens: 30,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 25,
+            sessionId: 'codex-session',
+            gitBranch: 'main',
+          }),
+        ],
+        diagnostics: {
+          'claude-code': diagnostics(),
+          codex: diagnostics({ scannedFileCount: 1 }),
+          opencode: diagnostics(),
+        },
+      })),
+      resolvePullRequest: vi.fn().mockResolvedValue(
+        okPr({
+          repoRoot: '/repo',
+          worktreeRoots: ['/repo'],
+          commits: [
+            commit({
+              sha: '1111111111111111',
+              patchId: 'patch-1',
+              message: 'first commit',
+              authoredAt: '2024-01-01T00:05:00.000Z',
+            }),
+            commit({
+              sha: '2222222222222222',
+              patchId: 'patch-2',
+              message: 'second commit',
+              authoredAt: '2024-01-01T00:10:00.000Z',
+            }),
+          ],
+        }),
+      ),
+    });
+    const runner = {
+      run: vi.fn(async (command: string, args: string[]) => {
+        if (command === 'git' && args[0] === 'reflog') {
+          return {
+            stdout: [
+              'HEAD@{2024-01-01T00:11:00+00:00}\0commit: second commit',
+              'HEAD@{2024-01-01T00:06:00+00:00}\0checkout: moving from main to feature/prtokens',
+              'HEAD@{2024-01-01T00:00:00+00:00}\0commit: work on main',
+            ].join('\n'),
+            stderr: '',
+          };
+        }
+
+        return { stdout: '', stderr: '' };
+      }),
+    };
+
+    const result = await postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: false,
+      json: true,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+      runner,
+    });
+
+    expect(result).toMatchObject({ kind: 'json' });
+    const payload = JSON.parse(result.kind === 'json' ? result.payload : '');
+    expect(payload.attribution.totals).toMatchObject({
+      inputTokens: 300,
+      outputTokens: 30,
+      cacheReadTokens: 25,
+      sessionCount: 1,
+      attributedEventCount: 1,
+    });
+    expect(payload.attribution.buckets[1]).toMatchObject({
+      commitSha: '2222222222222222',
+      inputTokens: 300,
+      outputTokens: 30,
+      sessionCount: 1,
+    });
+    expect(payload.agentTotals).toEqual([
+      expect.objectContaining({ agent: 'codex', inputTokens: 300, outputTokens: 30, sessionCount: 1 }),
+    ]);
+  });
+
   it('normalizes gh setup failures from PR resolution', async () => {
     const deps = createDeps({
       resolvePullRequest: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),

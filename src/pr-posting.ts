@@ -1,4 +1,5 @@
 import { attributeUsageToCommits } from './attribution-engine.js';
+import { readBranchCheckouts, repairStaleCodexBranches } from './branch-history.js';
 import { renderPrComment, type RenderAuthorInput } from './comment-renderer.js';
 import { defaultCommandRunner, resolvePullRequest, type CommandRunner } from './git-resolver.js';
 import { ensureGhReady, upsertPrComment } from './github-poster.js';
@@ -72,13 +73,15 @@ export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): 
     return { kind: 'no-usage', message: noUsageMessage };
   }
 
+  const branchCheckouts = await readBranchCheckouts({ runner, cwd: resolvedPr.repoRoot || options.cwd });
+  const events = repairStaleCodexBranches(usage.events, branchCheckouts, resolvedPr.branch);
   const attribution = attributeUsageToCommits({
-    events: usage.events,
+    events,
     commits: resolvedPr.commits,
     branch: resolvedPr.branch,
   });
   const priced = priceAttributionResult(attribution);
-  const agentTotals = toAgentSummaries(usage.events, resolvedPr.commits, resolvedPr.branch);
+  const agentTotals = toAgentSummaries(events, resolvedPr.commits, resolvedPr.branch);
   const currentAuthor = toRenderAuthorInput(priced, resolvedPr.pr.currentUserLogin ?? resolvedPr.pr.authorLogin, agentTotals);
   const renderMarkdown = (existingBody?: string) => renderPrComment({ existingBody, currentAuthor });
 
