@@ -25,6 +25,8 @@ export interface PendingPrQueue {
   jobs: PendingPrJob[];
 }
 
+type UnknownRecord = Record<string, unknown>;
+
 export function defaultQueuePath(env: NodeJS.ProcessEnv = process.env): string {
   const base = env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
   return join(base, 'prtokens', 'pending-prs.json');
@@ -40,24 +42,27 @@ export function readPendingQueue(queuePath: string): PendingPrQueue {
   }
 
   const parsed = JSON.parse(readFileSync(queuePath, 'utf8')) as Partial<PendingPrQueue>;
-  return { version: 1, jobs: Array.isArray(parsed.jobs) ? parsed.jobs.map((job) => sanitizePendingPrJob(job as PendingPrJob)) : [] };
+  return { version: 1, jobs: Array.isArray(parsed.jobs) ? sanitizePendingPrJobs(parsed.jobs) : [] };
 }
 
 export function writePendingQueue(queuePath: string, queue: PendingPrQueue): void {
   mkdirSync(dirname(queuePath), { recursive: true });
   const tempPath = `${queuePath}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify({ version: 1, jobs: queue.jobs.map(sanitizePendingPrJob) }, null, 2)}\n`);
+  writeFileSync(tempPath, `${JSON.stringify({ version: 1, jobs: sanitizePendingPrJobs(queue.jobs) }, null, 2)}\n`);
   renameSync(tempPath, queuePath);
 }
 
 export function enqueuePendingPr(queuePath: string, job: PendingPrJob): PendingPrJob {
   const queue = readPendingQueue(queuePath);
   const sanitizedJob = sanitizePendingPrJob(job);
+  if (!sanitizedJob) throw new Error('Invalid pending PR job');
   const existingIndex = queue.jobs.findIndex((entry) => entry.id === sanitizedJob.id);
   if (existingIndex === -1) {
     queue.jobs.push(sanitizedJob);
   } else {
-    queue.jobs[existingIndex] = sanitizePendingPrJob({ ...queue.jobs[existingIndex], ...sanitizedJob, attempts: queue.jobs[existingIndex].attempts });
+    const updated = sanitizePendingPrJob({ ...queue.jobs[existingIndex], ...sanitizedJob, attempts: queue.jobs[existingIndex].attempts });
+    if (!updated) throw new Error('Invalid pending PR job');
+    queue.jobs[existingIndex] = updated;
   }
   writePendingQueue(queuePath, queue);
   return existingIndex === -1 ? sanitizedJob : queue.jobs[existingIndex];
@@ -68,7 +73,8 @@ export function updatePendingPrJob(queuePath: string, id: string, patch: Partial
   const index = queue.jobs.findIndex((job) => job.id === id);
   if (index === -1) return undefined;
 
-  const updated = sanitizePendingPrJob({ ...queue.jobs[index], ...patch } as PendingPrJob);
+  const updated = sanitizePendingPrJob({ ...queue.jobs[index], ...patch });
+  if (!updated) return undefined;
   queue.jobs[index] = updated;
   writePendingQueue(queuePath, queue);
   return updated;
@@ -121,7 +127,26 @@ function sanitizeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'repo';
 }
 
-function sanitizePendingPrJob(job: PendingPrJob): PendingPrJob {
+function sanitizePendingPrJobs(jobs: unknown[]): PendingPrJob[] {
+  return jobs.flatMap((job) => {
+    const sanitized = sanitizePendingPrJob(job);
+    return sanitized ? [sanitized] : [];
+  });
+}
+
+function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
+  if (!isRecord(job)) return undefined;
+  if (!isString(job.id)) return undefined;
+  if (!isString(job.repoRoot)) return undefined;
+  if (!isString(job.remoteName)) return undefined;
+  if (!isString(job.localBranch)) return undefined;
+  if (!isString(job.remoteBranch)) return undefined;
+  if (!isString(job.headSha)) return undefined;
+  if (!isString(job.queuedAt)) return undefined;
+  if (!isNumber(job.attempts)) return undefined;
+  if (!isPendingPrStatus(job.status)) return undefined;
+  if (!isString(job.lastResult)) return undefined;
+
   const sanitized: PendingPrJob = {
     id: job.id,
     repoRoot: job.repoRoot,
@@ -135,9 +160,25 @@ function sanitizePendingPrJob(job: PendingPrJob): PendingPrJob {
     lastResult: job.lastResult,
   };
 
-  if (job.repository !== undefined) sanitized.repository = job.repository;
-  if (job.remoteUrl !== undefined) sanitized.remoteUrl = job.remoteUrl;
-  if (job.lastAttemptAt !== undefined) sanitized.lastAttemptAt = job.lastAttemptAt;
+  if (isString(job.repository)) sanitized.repository = job.repository;
+  if (isString(job.remoteUrl)) sanitized.remoteUrl = job.remoteUrl;
+  if (isString(job.lastAttemptAt)) sanitized.lastAttemptAt = job.lastAttemptAt;
 
   return sanitized;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isPendingPrStatus(value: unknown): value is PendingPrStatus {
+  return value === 'pending' || value === 'blocked' || value === 'completed' || value === 'failed';
 }

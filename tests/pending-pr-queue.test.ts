@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -116,6 +116,58 @@ describe('pending PR queue', () => {
       attempts: 2,
       lastResult: 'posted PR #42',
     });
+  });
+
+  it('skips malformed persisted jobs and preserves valid string optional fields', () => {
+    const queuePath = tempQueuePath();
+    writeFileSync(
+      queuePath,
+      JSON.stringify({
+        version: 1,
+        jobs: [
+          null,
+          {},
+          { id: 'missing-fields', repoRoot: '/repo' },
+          { ...job({ id: 'wrong-required-types' }), attempts: '0' },
+          {
+            ...job({ id: 'valid-with-invalid-optionals' }),
+            repository: 42,
+            remoteUrl: { url: 'git@github.com:acme/prtokens.git' },
+            lastAttemptAt: false,
+            transcript: 'conversation transcript',
+          },
+          job({
+            id: 'valid-with-optionals',
+            repository: 'acme/prtokens',
+            remoteUrl: 'git@github.com:acme/prtokens.git',
+            lastAttemptAt: '2026-06-14T00:03:00.000Z',
+          }),
+        ],
+      }),
+    );
+
+    const queue = readPendingQueue(queuePath);
+    expect(queue.jobs).toHaveLength(2);
+    expect(queue.jobs[0]).toMatchObject({ id: 'valid-with-invalid-optionals', status: 'pending' });
+    expect(queue.jobs[0]).not.toHaveProperty('repository');
+    expect(queue.jobs[0]).not.toHaveProperty('remoteUrl');
+    expect(queue.jobs[0]).not.toHaveProperty('lastAttemptAt');
+    expect(queue.jobs[0]).not.toHaveProperty('transcript');
+    expect(queue.jobs[1]).toMatchObject({
+      id: 'valid-with-optionals',
+      repository: 'acme/prtokens',
+      remoteUrl: 'git@github.com:acme/prtokens.git',
+      lastAttemptAt: '2026-06-14T00:03:00.000Z',
+    });
+
+    expect(() => formatQueueStatus(queue)).not.toThrow();
+  });
+
+  it('returns an empty queue when persisted jobs is not an array', () => {
+    const queuePath = tempQueuePath();
+    writeFileSync(queuePath, JSON.stringify({ version: 1, jobs: { id: 'not-an-array' } }));
+
+    expect(readPendingQueue(queuePath)).toEqual({ version: 1, jobs: [] });
   });
 
   it('formats empty and populated status output', () => {
