@@ -142,8 +142,8 @@ function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
   if (!isString(job.localBranch)) return undefined;
   if (!isString(job.remoteBranch)) return undefined;
   if (!isString(job.headSha)) return undefined;
-  if (!isString(job.queuedAt)) return undefined;
-  if (!isNumber(job.attempts)) return undefined;
+  if (!isValidDateString(job.queuedAt)) return undefined;
+  if (!isValidAttempts(job.attempts)) return undefined;
   if (!isPendingPrStatus(job.status)) return undefined;
   if (!isString(job.lastResult)) return undefined;
 
@@ -162,7 +162,7 @@ function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
 
   if (isString(job.repository)) sanitized.repository = job.repository;
   if (isString(job.remoteUrl)) sanitized.remoteUrl = job.remoteUrl;
-  if (isString(job.lastAttemptAt)) sanitized.lastAttemptAt = job.lastAttemptAt;
+  if (isValidDateString(job.lastAttemptAt)) sanitized.lastAttemptAt = job.lastAttemptAt;
 
   return sanitized;
 }
@@ -177,6 +177,14 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isValidAttempts(value: unknown): value is number {
+  return isNumber(value) && Number.isInteger(value) && value >= 0;
+}
+
+function isValidDateString(value: unknown): value is string {
+  return isString(value) && Number.isFinite(Date.parse(value));
 }
 
 function isPendingPrStatus(value: unknown): value is PendingPrStatus {

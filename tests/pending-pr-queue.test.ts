@@ -170,6 +170,28 @@ describe('pending PR queue', () => {
     expect(readPendingQueue(queuePath)).toEqual({ version: 1, jobs: [] });
   });
 
+  it('skips persisted jobs with invalid dates or attempts', () => {
+    const queuePath = tempQueuePath();
+    writeFileSync(
+      queuePath,
+      JSON.stringify({
+        version: 1,
+        jobs: [
+          job({ id: 'invalid-queued-at', queuedAt: 'not-a-date' }),
+          job({ id: 'negative-attempts', attempts: -1 }),
+          job({ id: 'fractional-attempts', attempts: 1.5 }),
+          job({ id: 'valid-with-invalid-last-attempt', lastAttemptAt: 'not-a-date' }),
+          job({ id: 'valid-with-valid-last-attempt', lastAttemptAt: '2026-06-14T00:03:00.000Z' }),
+        ],
+      }),
+    );
+
+    const queue = readPendingQueue(queuePath);
+    expect(queue.jobs.map((entry) => entry.id)).toEqual(['valid-with-invalid-last-attempt', 'valid-with-valid-last-attempt']);
+    expect(queue.jobs[0]).not.toHaveProperty('lastAttemptAt');
+    expect(queue.jobs[1]).toMatchObject({ lastAttemptAt: '2026-06-14T00:03:00.000Z' });
+  });
+
   it('formats empty and populated status output', () => {
     const now = new Date('2026-06-14T00:10:00.000Z');
 
