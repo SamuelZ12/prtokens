@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - 2026-06-14
+
+### Fixed
+
+- Attribute Codex work correctly after switching branches.
+
 ## 0.4.0 - 2026-06-14
 
 ### Added
