@@ -99,13 +99,13 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('prtokens_bin="$(command -v prtokens 2>/dev/null || printf');
     expect(hookContent).toContain('while read local_ref local_sha remote_ref remote_sha; do');
     expect(hookContent).toContain('done < "$stdin_file"');
-    expect(hookContent).toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
+    expect(hookContent).not.toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
+    expect(hookContent).not.toContain(') >/dev/null 2>&1 &');
     expect(hookContent).toContain(
       'if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
     );
     expect(hookContent).not.toContain('[ "${local_ref#refs/heads/}" != "$local_ref" ]');
     expect(hookContent).toContain('"$prtokens_bin" __hook-pushed-ref');
-    expect(hookContent).toContain("trap '' HUP");
     expect(hookContent.indexOf('[ "${remote_ref#refs/heads/}" != "$remote_ref" ]')).toBeLessThan(
       hookContent.indexOf('"$prtokens_bin" __hook-pushed-ref'),
     );
@@ -115,7 +115,6 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('--local-branch "$local_branch"');
     expect(hookContent).toContain('--remote-branch "$remote_branch"');
     expect(hookContent).toContain('--head-sha "$local_sha"');
-    expect(hookContent).toContain(') >/dev/null 2>&1 &');
     expect(hookContent).toContain('exit 0');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
     expect(commands).toEqual([
