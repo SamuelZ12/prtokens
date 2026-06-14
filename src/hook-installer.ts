@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
 export interface CommandResult {
   stdout: string;
@@ -247,7 +247,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       };
     }
   }
-  const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
+  const { hookBody, hookAction } = mergeHookBody(currentHookBody, hookPathPrefix(deps));
   const resultBase = {
     dryRun,
     hooksDir,
@@ -286,9 +286,9 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   return { ok: true, ...resultBase };
 }
 
-function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: string): { hookBody: string; hookAction: HookAction } {
+function mergeHookBody(currentHookBody: string | undefined, pathPrefix: HookPathPrefix): { hookBody: string; hookAction: HookAction } {
   if (currentHookBody === undefined) {
-    const managedBlock = renderManagedBlock(prtokensBinPath, true, true);
+    const managedBlock = renderManagedBlock(pathPrefix, true, true);
 
     return { hookBody: `#!/bin/sh\n${managedBlock}\n`, hookAction: 'installed' };
   }
@@ -297,7 +297,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   if (managedBlockPattern.test(currentHookBody)) {
     const prefix = contentBeforeManagedBlock(currentHookBody) ?? '';
     const managedBlock = renderManagedBlock(
-      prtokensBinPath,
+      pathPrefix,
       trailingContentAfterManagedBlock(currentHookBody).trim() === '',
       !hasMeaningfulShellContent(prefix),
     );
@@ -310,7 +310,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   }
 
   const separator = currentHookBody.endsWith('\n') ? '' : '\n';
-  const managedBlock = renderManagedBlock(prtokensBinPath, true, !hasMeaningfulShellContent(currentHookBody));
+  const managedBlock = renderManagedBlock(pathPrefix, true, !hasMeaningfulShellContent(currentHookBody));
 
   return {
     hookBody: `${currentHookBody}${separator}${managedBlock}\n`,
@@ -361,7 +361,12 @@ function hasMeaningfulShellContent(hookBody: string): boolean {
   });
 }
 
-function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, includeRepoLocalForwarding: boolean): string {
+interface HookPathPrefix {
+  prtokensBinPath: string;
+  pathPrefix: string;
+}
+
+function renderManagedBlock(pathPrefix: HookPathPrefix, includeFinalExit: boolean, includeRepoLocalForwarding: boolean): string {
   const lines = [
     managedStart,
     'prtokens_previous_status=$?',
@@ -369,6 +374,7 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
     '  exit "$prtokens_previous_status"',
     'fi',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
+    ...renderPathExportLines(pathPrefix.pathPrefix),
     'stdin_file="$(mktemp)" || exit 1',
     'if ! cat > "$stdin_file"; then',
     '  rm -f "$stdin_file"',
@@ -404,7 +410,7 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
   }
 
   lines.push(
-    `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
+    `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(pathPrefix.prtokensBinPath)})"`,
     '(',
     '  remote_name="$1"',
     '  zero_sha=0000000000000000000000000000000000000000',
@@ -446,6 +452,45 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
   lines.push(managedEnd);
 
   return lines.join('\n');
+}
+
+function renderPathExportLines(pathPrefix: string): string[] {
+  if (pathPrefix === '') return [];
+
+  return [
+    `PATH=${shellQuote(pathPrefix)}\${PATH:+":$PATH"}`,
+    'export PATH',
+    '',
+  ];
+}
+
+function hookPathPrefix(deps: HookInstallerDeps): HookPathPrefix {
+  const entries = [
+    dirname(deps.prtokensBinPath),
+    commandDir(deps, 'node'),
+    commandDir(deps, 'gh'),
+  ];
+
+  return {
+    prtokensBinPath: deps.prtokensBinPath,
+    pathPrefix: uniqueStrings(entries)
+      .filter((entry) => entry !== '' && isAbsolute(entry))
+      .join(':'),
+  };
+}
+
+function commandDir(deps: HookInstallerDeps, command: string): string {
+  if ((deps.env.PATH ?? '') === '') return '';
+
+  const result = runCommandSafely(deps, 'sh', ['-c', `command -v ${command}`]);
+  if (result.status !== 0) return '';
+
+  const commandPath = result.stdout.trim().split('\n')[0] ?? '';
+  return commandPath === '' ? '' : dirname(commandPath);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function trailingContentAfterManagedBlock(hookBody: string): string {
