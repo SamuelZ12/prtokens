@@ -4,6 +4,7 @@ export interface AttributeUsageInput {
   events: UsageEvent[];
   commits: CommitRecord[];
   branch: string;
+  firstCommitAttributionStart?: string;
 }
 
 type MutableBucket = AttributionBucket & {
@@ -30,6 +31,7 @@ export function attributeUsageToCommits(input: AttributeUsageInput): Attribution
       commits,
       event,
       lowConfidence,
+      input.firstCommitAttributionStart,
       () => (preFirstCommit ??= createPreFirstCommitBucket()),
       () => (uncommittedTail ??= createTailBucket()),
     );
@@ -152,6 +154,7 @@ function bucketForEvent(
   commits: CommitRecord[],
   event: UsageEvent,
   lowConfidence: boolean,
+  firstCommitAttributionStart: string | undefined,
   getPreFirstCommit: () => MutableBucket,
   getUncommittedTail: () => MutableBucket,
 ): MutableBucket {
@@ -160,6 +163,11 @@ function bucketForEvent(
 
   if (firstCommitTime !== undefined && eventTime < firstCommitTime) {
     if (!lowConfidence && buckets[0] !== undefined) {
+      return buckets[0];
+    }
+
+    const attributionStartTime = firstCommitAttributionStart === undefined ? undefined : Date.parse(firstCommitAttributionStart);
+    if (buckets[0] !== undefined && attributionStartTime !== undefined && eventTime >= attributionStartTime) {
       return buckets[0];
     }
 

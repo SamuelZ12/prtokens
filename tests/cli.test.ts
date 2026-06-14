@@ -1124,13 +1124,13 @@ describe('runCli', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', prNumber: 123 });
   });
 
-  it('excludes branch-unknown pre-first-commit usage from rendered PR totals', async () => {
+  it('excludes old branch-unknown pre-first-commit usage from rendered PR totals', async () => {
     const deps = createDeps({
       readAllUsage: vi.fn().mockResolvedValue(allUsage({
         events: [
           usageEvent({
             gitBranch: undefined,
-            timestamp: '2024-01-01T00:00:00.000Z',
+            timestamp: '2023-12-31T23:00:00.000Z',
             inputTokens: 100,
             outputTokens: 10,
             cacheWriteTokens: 0,
@@ -1308,6 +1308,96 @@ describe('postPrtokensForCurrentRepo', () => {
     });
     expect(payload.agentTotals).toEqual([
       expect.objectContaining({ agent: 'codex', inputTokens: 300, outputTokens: 30, sessionCount: 1 }),
+    ]);
+  });
+
+  it('attributes missing-branch usage after branch checkout to the first PR commit', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockResolvedValue(allUsage({
+        events: [
+          usageEvent({
+            id: 'old-main-work',
+            timestamp: '2024-01-01T00:01:00.000Z',
+            inputTokens: 900,
+            outputTokens: 90,
+            gitBranch: undefined,
+          }),
+          usageEvent({
+            id: 'first-commit-work',
+            timestamp: '2024-01-01T00:04:00.000Z',
+            inputTokens: 300,
+            outputTokens: 30,
+            gitBranch: undefined,
+          }),
+        ],
+      })),
+      resolvePullRequest: vi.fn().mockResolvedValue(
+        okPr({
+          repoRoot: '/repo',
+          worktreeRoots: ['/repo'],
+          commits: [
+            commit({
+              sha: '1111111111111111',
+              patchId: 'patch-1',
+              message: 'first commit',
+              authoredAt: '2024-01-01T00:05:00.000Z',
+            }),
+          ],
+        }),
+      ),
+    });
+    const runner = {
+      run: vi.fn(async (command: string, args: string[]) => {
+        if (command === 'git' && args[0] === 'reflog') {
+          return {
+            stdout: [
+              'HEAD@{2024-01-01T00:03:00+00:00}\0checkout: moving from main to feature/prtokens',
+              'HEAD@{2024-01-01T00:00:00+00:00}\0commit: work on main',
+            ].join('\n'),
+            stderr: '',
+          };
+        }
+
+        return { stdout: '', stderr: '' };
+      }),
+    };
+
+    const result = await postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: false,
+      json: true,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+      runner,
+    });
+
+    expect(result).toMatchObject({ kind: 'json' });
+    const payload = JSON.parse(result.kind === 'json' ? result.payload : '');
+    expect(payload.attribution.preFirstCommit).toMatchObject({
+      inputTokens: 900,
+      outputTokens: 90,
+      eventCount: 1,
+    });
+    expect(payload.attribution.buckets[0]).toMatchObject({
+      commitSha: '1111111111111111',
+      inputTokens: 300,
+      outputTokens: 30,
+      eventCount: 1,
+      lowConfidenceEventCount: 1,
+    });
+    expect(payload.attribution.totals).toMatchObject({
+      inputTokens: 300,
+      outputTokens: 30,
+      attributedEventCount: 1,
+      lowConfidenceEventCount: 1,
+    });
+    expect(payload.agentTotals).toEqual([
+      expect.objectContaining({ agent: 'claude-code', inputTokens: 300, outputTokens: 30, sessionCount: 1 }),
     ]);
   });
 

@@ -118,6 +118,46 @@ describe('attributeUsageToCommits', () => {
     expect(result.coverage.attributedPercent).toBe(0);
   });
 
+  it('attributes branch-unknown usage after the first-commit lower bound to the first commit as low-confidence', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      firstCommitAttributionStart: '2026-06-12T09:15:00.000Z',
+      events: [usageEvent({ timestamp: '2026-06-12T09:30:00.000Z' })],
+    });
+
+    expect(result.preFirstCommit).toBeUndefined();
+    expect(result.buckets[0]).toMatchObject({
+      commitSha: 'aaa1111',
+      eventCount: 1,
+      lowConfidenceEventCount: 1,
+      inputTokens: 100,
+      outputTokens: 10,
+      sessionCount: 1,
+    });
+    expect(result.buckets[1]).toMatchObject({ commitSha: 'bbb2222', eventCount: 0, inputTokens: 0 });
+    expect(result.totals).toMatchObject({ inputTokens: 100, outputTokens: 10, attributedEventCount: 1, lowConfidenceEventCount: 1 });
+    expect(result.coverage.lowConfidencePercent).toBe(100);
+  });
+
+  it('keeps branch-unknown usage before the first-commit lower bound out of PR totals', () => {
+    const result = attributeUsageToCommits({
+      branch: 'main',
+      commits,
+      firstCommitAttributionStart: '2026-06-12T09:45:00.000Z',
+      events: [usageEvent({ timestamp: '2026-06-12T09:30:00.000Z' })],
+    });
+
+    expect(result.preFirstCommit).toMatchObject({
+      label: 'pre-first-commit work',
+      inputTokens: 100,
+      outputTokens: 10,
+      eventCount: 1,
+    });
+    expect(result.buckets[0]).toMatchObject({ commitSha: 'aaa1111', eventCount: 0, inputTokens: 0 });
+    expect(result.totals).toMatchObject({ inputTokens: 0, outputTokens: 0, attributedEventCount: 0 });
+  });
+
   it('sorts commits by authored time without mutating caller input', () => {
     const unsortedCommits = [commits[1], commits[0]];
 

@@ -1,5 +1,5 @@
 import { attributeUsageToCommits } from './attribution-engine.js';
-import { readBranchCheckouts, repairStaleCodexBranches } from './branch-history.js';
+import { latestCheckoutToBranchBefore, readBranchCheckouts, repairStaleCodexBranches, type BranchCheckout } from './branch-history.js';
 import { renderPrComment, type RenderAuthorInput } from './comment-renderer.js';
 import { defaultCommandRunner, resolvePullRequest, type CommandRunner } from './git-resolver.js';
 import { ensureGhReady, upsertPrComment } from './github-poster.js';
@@ -11,6 +11,8 @@ type AgentSummary = NonNullable<RenderAuthorInput['agents']>[number];
 
 export const noUsageMessage = 'No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).';
 export const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
+
+const firstCommitFallbackLookbackMs = 30 * 60_000;
 
 export type PostPrtokensResult =
   | { kind: 'posted'; prNumber: number; repository: string; commentUrl?: string }
@@ -75,13 +77,19 @@ export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): 
 
   const branchCheckouts = await readBranchCheckouts({ runner, cwd: resolvedPr.repoRoot || options.cwd });
   const events = repairStaleCodexBranches(usage.events, branchCheckouts, resolvedPr.branch);
+  const firstCommitAttributionStart = resolveFirstCommitAttributionStart(
+    resolvedPr.commits,
+    branchCheckouts,
+    resolvedPr.branch,
+  );
   const attribution = attributeUsageToCommits({
     events,
     commits: resolvedPr.commits,
     branch: resolvedPr.branch,
+    firstCommitAttributionStart,
   });
   const priced = priceAttributionResult(attribution);
-  const agentTotals = toAgentSummaries(events, resolvedPr.commits, resolvedPr.branch);
+  const agentTotals = toAgentSummaries(events, resolvedPr.commits, resolvedPr.branch, firstCommitAttributionStart);
   const currentAuthor = toRenderAuthorInput(priced, resolvedPr.pr.currentUserLogin ?? resolvedPr.pr.authorLogin, agentTotals);
   const renderMarkdown = (existingBody?: string) => renderPrComment({ existingBody, currentAuthor });
 
@@ -203,7 +211,12 @@ function toRenderAuthorInput(
   };
 }
 
-function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch: string): AgentSummary[] {
+function toAgentSummaries(
+  events: UsageEvent[],
+  commits: CommitRecord[],
+  branch: string,
+  firstCommitAttributionStart: string | undefined,
+): AgentSummary[] {
   const agents = ['claude-code', 'codex', 'opencode'] satisfies AgentName[];
   const summaries: AgentSummary[] = [];
 
@@ -211,7 +224,7 @@ function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch:
     const agentEvents = events.filter((event) => event.agent === agent);
     if (agentEvents.length === 0) continue;
 
-    const attribution = attributeUsageToCommits({ events: agentEvents, commits, branch });
+    const attribution = attributeUsageToCommits({ events: agentEvents, commits, branch, firstCommitAttributionStart });
     const priced = priceAttributionResult(attribution);
     if (priced.totals.attributedEventCount === 0) continue;
 
@@ -225,6 +238,29 @@ function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch:
   }
 
   return summaries.sort((left, right) => right.costUsd - left.costUsd);
+}
+
+function resolveFirstCommitAttributionStart(
+  commits: CommitRecord[],
+  checkouts: BranchCheckout[],
+  branch: string,
+): string | undefined {
+  const firstCommit = [...commits].sort((left, right) => Date.parse(left.authoredAt) - Date.parse(right.authoredAt))[0];
+  if (firstCommit === undefined) {
+    return undefined;
+  }
+
+  const checkoutStart = latestCheckoutToBranchBefore(checkouts, branch, firstCommit.authoredAt);
+  if (checkoutStart !== undefined) {
+    return checkoutStart;
+  }
+
+  const firstCommitTime = Date.parse(firstCommit.authoredAt);
+  if (Number.isNaN(firstCommitTime)) {
+    return undefined;
+  }
+
+  return new Date(firstCommitTime - firstCommitFallbackLookbackMs).toISOString();
 }
 
 function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
