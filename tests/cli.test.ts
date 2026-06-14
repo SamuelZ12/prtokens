@@ -249,6 +249,44 @@ describe('runCli', () => {
     expect(deps.stderr).toHaveBeenCalledWith('prtokens could not post the PR comment: api failed');
   });
 
+  it('does not fail successful PR creation when posting throws', async () => {
+    const deps = createDeps({
+      readAllUsage: vi.fn().mockRejectedValue(new Error('usage failed')),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('prtokens could not post the PR comment: usage failed');
+  });
+
+  it('returns failure with setup guidance when gh pr create cannot spawn', async () => {
+    const deps = createDeps({
+      runGhPrCreate: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(1);
+
+    expect(deps.stderr).toHaveBeenCalledWith(ghSetupMessage);
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('forwards gh pr create args unchanged when no separator is present', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--title', 'My PR', '--body', 'Body'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'My PR', '--body', 'Body']);
+  });
+
+  it('preserves non-leading separator in gh pr create args', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--title', 'T', '--', '--body', 'B'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'T', '--', '--body', 'B']);
+  });
+
   it('enqueues metadata when hook mode finds no PR', async () => {
     const deps = createDeps({
       resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),

@@ -189,35 +189,45 @@ function runInit(argv: string[], deps: CliDeps): number {
 }
 
 async function runPrCreate(argv: string[], deps: CliDeps): Promise<number> {
-  const separatorIndex = argv.indexOf('--');
-  const ghArgs = separatorIndex === -1 ? argv : argv.slice(separatorIndex + 1);
-  const createExitCode = await deps.runGhPrCreate(ghArgs);
+  const ghArgs = argv[0] === '--' ? argv.slice(1) : argv;
+  let createExitCode;
+  try {
+    createExitCode = await deps.runGhPrCreate(ghArgs);
+  } catch (error) {
+    deps.stderr(isGhSetupError(error) ? ghSetupMessage : `gh pr create failed: ${formatErrorMessage(error)}`);
+    return 1;
+  }
   if (createExitCode !== 0) return createExitCode;
 
-  const result = await postPrtokensForCurrentRepo({
-    cwd: deps.cwd,
-    dryRun: false,
-    json: false,
-    verbose: false,
-    stdout: deps.stdout,
-    stderr: deps.stderr,
-    readAllUsage: deps.readAllUsage,
-    resolvePullRequest: deps.resolvePullRequest,
-    ensureGhReady: deps.ensureGhReady,
-    upsertPrComment: deps.upsertPrComment,
-  });
+  try {
+    const result = await postPrtokensForCurrentRepo({
+      cwd: deps.cwd,
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    });
 
-  if (result.kind === 'post-failed') {
-    deps.stderr(`prtokens could not post the PR comment: ${result.error}`);
+    if (result.kind === 'post-failed') {
+      deps.stderr(`prtokens could not post the PR comment: ${result.error}`);
+      return 0;
+    }
+    if (result.kind === 'gh-not-ready') {
+      deps.stderr(result.message);
+      return 0;
+    }
+
+    printPostResult(result, deps.stdout, deps.stderr);
+    return 0;
+  } catch (error) {
+    deps.stderr(`prtokens could not post the PR comment: ${formatErrorMessage(error)}`);
     return 0;
   }
-  if (result.kind === 'gh-not-ready') {
-    deps.stderr(result.message);
-    return 0;
-  }
-
-  printPostResult(result, deps.stdout, deps.stderr);
-  return 0;
 }
 
 interface HookPushedRefFlags {
@@ -535,4 +545,8 @@ function isGhSetupError(error: unknown): boolean {
     detail.includes('gh auth login') ||
     detail.includes('authentication required')
   );
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
