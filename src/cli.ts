@@ -175,17 +175,26 @@ function runGhPrCreate(args: string[]): Promise<number> {
 
 function runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Promise<string | undefined> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', ['ls-remote', remoteName, remoteRef], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn('git', ['ls-remote', '--exit-code', remoteName, remoteRef], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
+    let stderr = '';
     child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) {
-        resolve(undefined);
+        const details = stderr.trim();
+        reject(new Error(`git ls-remote failed for ${remoteRef} on ${remoteName}${details.length > 0 ? `: ${details}` : ` with exit code ${code ?? 'unknown'}`}`));
         return;
       }
-      resolve(stdout.trim().split(/\s+/)[0] || undefined);
+      const sha = stdout.trim().split(/\s+/)[0];
+      if (!sha) {
+        reject(new Error(`git ls-remote returned no SHA for ${remoteRef} on ${remoteName}`));
+        return;
+      }
+      resolve(sha);
     });
   });
 }

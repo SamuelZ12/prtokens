@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -111,6 +112,21 @@ function createDeps(overrides = {}) {
     stderr: vi.fn(),
     ...overrides,
   };
+}
+
+function createSpawnChild({ stdout = '', stderr = '', code = 0 } = {}) {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter & { setEncoding(encoding: string): void };
+    stderr: EventEmitter & { setEncoding(encoding: string): void };
+  };
+  child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  child.stderr = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  queueMicrotask(() => {
+    if (stdout.length > 0) child.stdout.emit('data', stdout);
+    if (stderr.length > 0) child.stderr.emit('data', stderr);
+    child.emit('close', code);
+  });
+  return child;
 }
 
 beforeEach(() => {
@@ -491,6 +507,76 @@ describe('runCli', () => {
       lastResult: 'waiting for PR',
     })).resolves.toBe('abcdef1234567890');
     expect(deps.runGitLsRemote).toHaveBeenCalledWith('/repo', 'origin', 'refs/heads/feature/prtokens');
+  });
+
+  it('fails closed when default remote head command exits non-zero', async () => {
+    vi.resetModules();
+    const spawn = vi.fn(() => createSpawnChild({ stderr: 'fatal: remote error\n', code: 2 }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const job = {
+        id: 'job-remote-head',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: '1234567890abcdef',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+        lastResult: 'waiting for PR',
+      };
+      const deps = createDeps({
+        runGitLsRemote: undefined,
+        readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+        processPendingPrJobs: vi.fn(async (options) => {
+          await expect(options.readRemoteHead(job)).rejects.toThrow('git ls-remote failed for refs/heads/feature/prtokens on origin: fatal: remote error');
+        }),
+      });
+
+      await expect(runCliWithMockedSpawn(['__process-queue'], deps)).resolves.toBe(0);
+
+      expect(spawn).toHaveBeenCalledWith('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/feature/prtokens'], { cwd: '/repo', stdio: ['ignore', 'pipe', 'pipe'] });
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
+  });
+
+  it('fails closed when default remote head command returns no SHA', async () => {
+    vi.resetModules();
+    const spawn = vi.fn(() => createSpawnChild({ code: 0 }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const job = {
+        id: 'job-remote-head',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: '1234567890abcdef',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+        lastResult: 'waiting for PR',
+      };
+      const deps = createDeps({
+        runGitLsRemote: undefined,
+        readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+        processPendingPrJobs: vi.fn(async (options) => {
+          await expect(options.readRemoteHead(job)).rejects.toThrow('git ls-remote returned no SHA for refs/heads/feature/prtokens on origin');
+        }),
+      });
+
+      await expect(runCliWithMockedSpawn(['__process-queue'], deps)).resolves.toBe(0);
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
   });
 
   it('retries pending process-queue jobs with a bounded delay', async () => {
