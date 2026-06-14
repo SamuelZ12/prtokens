@@ -18,7 +18,7 @@ export interface UsageEvent {
 
 export interface CommitRecord {
   sha: string;
-  patchId: string;
+  patchId?: string;
   message: string;
   authorLogin: string;
   authoredAt: string;

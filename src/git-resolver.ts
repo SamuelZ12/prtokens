@@ -116,6 +116,7 @@ export async function resolvePullRequest(input: {
   const currentUserLogin = (await readAuthenticatedUserLogin(runner, cwd)) ?? pr.author.login;
   const worktreeRoots = await readWorktreeRoots(runner, cwd, repoRoot || cwd || '');
   const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName, input.headSha);
+  const localCommitsBySha = new Map(localCommits.map((commit) => [commit.sha, commit]));
   const localCommitsByPatchId = new Map<string, LocalCommit>();
   for (const commit of localCommits) {
     if (commit.patchId !== undefined) {
@@ -127,11 +128,21 @@ export async function resolvePullRequest(input: {
   for (const prCommit of pr.commits) {
     const patchId = await readPatchId(runner, cwd, prCommit.oid);
     if (patchId === undefined) {
+      const localCommit = localCommitsBySha.get(prCommit.oid);
+      if (localCommit === undefined) {
+        continue;
+      }
+
+      commits.push({
+        sha: prCommit.oid,
+        message: prCommit.messageHeadline || localCommit.message,
+        authorLogin: pr.author.login,
+        authoredAt: localCommit.authoredAt || prCommit.authoredDate,
+      });
       continue;
     }
 
     const localCommit = localCommitsByPatchId.get(patchId);
-
     if (localCommit === undefined) {
       continue;
     }

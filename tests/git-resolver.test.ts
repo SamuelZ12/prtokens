@@ -246,6 +246,41 @@ describe('resolvePullRequest', () => {
     expect(result.kind === 'ok' ? result.commits : []).toEqual([]);
   });
 
+  it('keeps PR commits without patch-id when the local SHA matches', async () => {
+    const prWithEmptyCommit = {
+      ...prJson,
+      commits: [{ oid: 'abc', messageHeadline: 'empty commit', authoredDate: '2026-06-12T10:00:00Z' }],
+    };
+    const runner = createRunner((command, args, options) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args[0] === 'pr') return { stdout: JSON.stringify(prWithEmptyCommit), stderr: '' };
+      if (command === 'gh' && args.join(' ') === 'repo view --json nameWithOwner') {
+        return { stdout: JSON.stringify({ nameWithOwner: 'sam/prtokens' }), stderr: '' };
+      }
+      if (command === 'git' && args[0] === 'log') {
+        return { stdout: 'abc\u00002026-06-12T10:00:00Z\u0000empty local\n', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'show abc --pretty=format:') return { stdout: '', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === '') {
+        return { stdout: '', stderr: '' };
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner });
+
+    expect(result.kind).toBe('ok');
+    expect(result.kind === 'ok' ? result.commits : []).toEqual([
+      {
+        sha: 'abc',
+        message: 'empty commit',
+        authorLogin: 'sam',
+        authoredAt: '2026-06-12T10:00:00Z',
+      },
+    ]);
+  });
+
   it('ignores local commits without patch-id while keeping valid patch-id matches', async () => {
     const prWithTwoCommits = {
       ...prJson,
