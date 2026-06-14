@@ -133,7 +133,6 @@ describe('pending PR queue', () => {
             ...job({ id: 'valid-with-invalid-optionals' }),
             repository: 42,
             remoteUrl: { url: 'git@github.com:acme/prtokens.git' },
-            lastAttemptAt: false,
             transcript: 'conversation transcript',
           },
           job({
@@ -180,14 +179,15 @@ describe('pending PR queue', () => {
           job({ id: 'invalid-queued-at', queuedAt: 'not-a-date' }),
           job({ id: 'negative-attempts', attempts: -1 }),
           job({ id: 'fractional-attempts', attempts: 1.5 }),
-          job({ id: 'valid-with-invalid-last-attempt', lastAttemptAt: 'not-a-date' }),
+          job({ id: 'invalid-last-attempt', lastAttemptAt: 'not-a-date' }),
+          job({ id: 'valid-with-missing-last-attempt', lastAttemptAt: undefined }),
           job({ id: 'valid-with-valid-last-attempt', lastAttemptAt: '2026-06-14T00:03:00.000Z' }),
         ],
       }),
     );
 
     const queue = readPendingQueue(queuePath);
-    expect(queue.jobs.map((entry) => entry.id)).toEqual(['valid-with-invalid-last-attempt', 'valid-with-valid-last-attempt']);
+    expect(queue.jobs.map((entry) => entry.id)).toEqual(['valid-with-missing-last-attempt', 'valid-with-valid-last-attempt']);
     expect(queue.jobs[0]).not.toHaveProperty('lastAttemptAt');
     expect(queue.jobs[1]).toMatchObject({ lastAttemptAt: '2026-06-14T00:03:00.000Z' });
   });

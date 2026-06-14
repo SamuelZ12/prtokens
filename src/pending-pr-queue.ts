@@ -146,6 +146,7 @@ function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
   if (!isValidAttempts(job.attempts)) return undefined;
   if (!isPendingPrStatus(job.status)) return undefined;
   if (!isString(job.lastResult)) return undefined;
+  if (job.lastAttemptAt !== undefined && !isValidDateString(job.lastAttemptAt)) return undefined;
 
   const sanitized: PendingPrJob = {
     id: job.id,
@@ -162,7 +163,7 @@ function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
 
   if (isString(job.repository)) sanitized.repository = job.repository;
   if (isString(job.remoteUrl)) sanitized.remoteUrl = job.remoteUrl;
-  if (isValidDateString(job.lastAttemptAt)) sanitized.lastAttemptAt = job.lastAttemptAt;
+  if (job.lastAttemptAt !== undefined) sanitized.lastAttemptAt = job.lastAttemptAt;
 
   return sanitized;
 }
