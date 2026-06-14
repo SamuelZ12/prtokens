@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.3 - 2026-06-14
+
+### Fixed
+
+- Fix automatic PR queue workflow behavior.
+- Deduplicate generated PR comments.
+- Improve single-agent PR comment attribution wording and cost display.
+
 ## 0.4.2 - 2026-06-14
 
 ### Fixed
