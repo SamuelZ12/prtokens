@@ -68,7 +68,7 @@ prtokens finds the open PR for your branch, reads your local agent transcripts, 
 | `prtokens init`                    | Install or update the optional global pre-push hook (see below).                                                            |
 | `prtokens init --dry-run`          | Preview the hook changes without writing files.                                                                             |
 | `prtokens status`                  | Show pending, blocked, failed, and recently completed automatic PR comment jobs.                                            |
-| `prtokens pr create -- <gh args>`  | Run `gh pr create <gh args>` and post the prtokens comment immediately after successful PR creation.                        |
+| `prtokens pr create -- <gh args>`  | Run `gh pr create <gh args>` and attempt to post the prtokens comment after successful PR creation.                         |
 
 
 ## Requirements
@@ -101,7 +101,7 @@ Preview the changes first with `prtokens init --dry-run`.
 
 **Caveats:** prtokens must be on `PATH` for Git hooks, or the absolute fallback path baked in by `prtokens init` must stay valid; a repository with a local `core.hooksPath` bypasses the global hook; and `gh pr create` on an already-pushed branch performs no push, so it will not trigger the hook.
 
-When a push has an open PR, the hook posts or updates the comment immediately in the background. When the push happens before the PR exists, prtokens records a metadata-only pending job and retries for 30 minutes. Queue records are retained locally for 24 hours so `prtokens status` can explain pending, blocked, failed, and completed work.
+When a push has an open PR, the hook posts or updates the comment immediately in the background. When the push happens before the PR exists, prtokens records a metadata-only pending job and retries within about a 30-minute window. Queue records are pruned by the background queue processor after 24 hours, so stale records can remain until the next processing run while `prtokens status` explains pending, blocked, failed, and completed work.
 
 For the most deterministic local workflow, create PRs through:
 
@@ -109,7 +109,7 @@ For the most deterministic local workflow, create PRs through:
 prtokens pr create -- --title "My PR" --body "Description"
 ```
 
-Everything after `--` is passed to `gh pr create`. If PR creation succeeds, prtokens resolves the new PR and posts the comment before exiting. If comment posting fails, the PR creation still succeeds and prtokens prints the posting error.
+Everything after `--` is passed to `gh pr create`. If PR creation succeeds, prtokens attempts to resolve the new PR and post the comment before exiting. If comment posting is skipped or fails, the PR creation still succeeds and prtokens prints the posting outcome or error.
 
 To install by hand — or in a git config prtokens will not modify automatically — run `prtokens init --dry-run` to print the exact managed block and its target path, then place the block there yourself.
 
