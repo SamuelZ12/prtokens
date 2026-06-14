@@ -65,6 +65,41 @@ describe('upsertPrComment', () => {
     ]);
   });
 
+  it('updates one prtokens comment and deletes duplicate prtokens comments', async () => {
+    const duplicateMarkdown = ['<!-- prtokens:v1 -->', '', 'Stale token summary'].join('\n');
+    const runner = createRunner((command, args) => {
+      if (command === 'gh' && args.join(' ') === 'api repos/OWNER/REPO/issues/12/comments') {
+        return {
+          stdout: JSON.stringify([
+            { id: 88, body: 'unrelated comment' },
+            { id: 99, body: duplicateMarkdown, html_url: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' },
+            { id: 100, body: markdown, html_url: 'https://github.com/OWNER/REPO/pull/12#issuecomment-100' },
+          ]),
+          stderr: '',
+        };
+      }
+
+      if (command === 'gh' && args.join(' ') === `api --method PATCH repos/OWNER/REPO/issues/comments/99 -f body=${markdown}`) {
+        return { stdout: JSON.stringify({ html_url: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' }), stderr: '' };
+      }
+
+      if (command === 'gh' && args.join(' ') === 'api --method DELETE repos/OWNER/REPO/issues/comments/100') {
+        return { stdout: '', stderr: '' };
+      }
+
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await upsertPrComment({ runner, repository: 'OWNER/REPO', prNumber: 12, markdown });
+
+    expect(result).toEqual({ ok: true, commentUrl: 'https://github.com/OWNER/REPO/pull/12#issuecomment-99' });
+    expect(runner.commands).toEqual([
+      { command: 'gh', args: ['api', 'repos/OWNER/REPO/issues/12/comments'] },
+      { command: 'gh', args: ['api', '--method', 'PATCH', 'repos/OWNER/REPO/issues/comments/99', '-f', `body=${markdown}`] },
+      { command: 'gh', args: ['api', '--method', 'DELETE', 'repos/OWNER/REPO/issues/comments/100'] },
+    ]);
+  });
+
   it('renders with the existing prtokens comment body before updating', async () => {
     const existingBody = ['<!-- prtokens:v1 -->', '', '<!-- prtokens:author:other {"login":"other","totalCostUsd":1,"inputTokens":1,"outputTokens":1,"sessionCount":1,"models":[],"attributedPercent":100,"lowConfidencePercent":0} -->', '### @other'].join('\n');
     const mergedMarkdown = `${existingBody}\n\n<!-- prtokens:author:runner {} -->`;

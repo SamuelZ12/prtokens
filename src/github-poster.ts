@@ -44,7 +44,8 @@ export async function upsertPrComment(
     return { ok: false, renderedMarkdown, error: safeErrorMessage(error) };
   }
 
-  const existingComment = comments.find((comment) => comment.body.includes(prtokensMarker));
+  const existingComments = comments.filter((comment) => comment.body.includes(prtokensMarker));
+  const existingComment = existingComments[0];
   renderedMarkdown = renderMarkdown(input, existingComment?.body);
   const args = existingComment
     ? ['api', '--method', 'PATCH', `repos/${input.repository}/issues/comments/${existingComment.id}`, '-f', `body=${renderedMarkdown}`]
@@ -52,6 +53,10 @@ export async function upsertPrComment(
 
   try {
     const result = await input.runner.run('gh', args);
+    for (const duplicate of existingComments.slice(1)) {
+      await input.runner.run('gh', ['api', '--method', 'DELETE', `repos/${input.repository}/issues/comments/${duplicate.id}`]);
+    }
+
     const commentUrl = parseCommentUrl(result.stdout);
     return commentUrl === undefined ? { ok: true } : { ok: true, commentUrl };
   } catch (error) {
