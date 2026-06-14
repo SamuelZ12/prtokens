@@ -53,6 +53,32 @@ export function repairStaleCodexBranches(
   });
 }
 
+export function latestCheckoutToBranchBefore(
+  checkouts: BranchCheckout[],
+  targetBranch: string,
+  timestamp: string,
+): string | undefined {
+  const cutoffTime = Date.parse(timestamp);
+  if (Number.isNaN(cutoffTime)) {
+    return undefined;
+  }
+
+  let latest: string | undefined;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const checkout of checkouts) {
+    const checkoutTime = Date.parse(checkout.timestamp);
+    if (Number.isNaN(checkoutTime) || checkoutTime > cutoffTime) {
+      continue;
+    }
+    if (checkout.toBranch === targetBranch && checkoutTime >= latestTime) {
+      latest = checkout.timestamp;
+      latestTime = checkoutTime;
+    }
+  }
+
+  return latest;
+}
+
 function parseBranchCheckoutLine(line: string): BranchCheckout | undefined {
   const [reflogSelector, message] = line.split('\0');
   if (!reflogSelector || !message) {
