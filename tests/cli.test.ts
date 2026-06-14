@@ -241,6 +241,104 @@ describe('runCli', () => {
     expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
   });
 
+  it('does not fail pushes when hook metadata parsing fails', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['__hook-pushed-ref', '--remote-name', 'origin'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('Missing required hook pushed-ref metadata.');
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.enqueuePendingPr).not.toHaveBeenCalled();
+  });
+
+  it('swallows hook enqueue errors so pushes can continue', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+      enqueuePendingPr: vi.fn(() => {
+        throw new Error('state path unavailable');
+      }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'git@github.com:acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('state path unavailable');
+    expect(deps.processPendingPrJobs).not.toHaveBeenCalled();
+  });
+
+  it('does not persist raw remote URLs from hook metadata', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'https://user:token@github.com/acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.enqueuePendingPr).toHaveBeenCalledTimes(1);
+    expect(deps.enqueuePendingPr.mock.calls[0]?.[1]).not.toHaveProperty('remoteUrl');
+  });
+
+  it('merges process-queue writes with concurrently enqueued jobs', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const concurrentJob = {
+      id: 'job-concurrent',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/other',
+      remoteBranch: 'feature/other',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:01:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const processedJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        options.writeQueue({ version: 1, jobs: [processedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+    expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [processedJob, concurrentJob],
+    });
+  });
+
   it('uses the shared posting flow for default report mode', async () => {
     const deps = createDeps();
 

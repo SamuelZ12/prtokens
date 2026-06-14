@@ -17,7 +17,7 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue } from './pending-pr-queue.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue, type PendingPrQueue } from './pending-pr-queue.js';
 import { processPendingPrJobs } from './pending-pr-worker.js';
 import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
@@ -165,7 +165,6 @@ function runInit(argv: string[], deps: CliDeps): number {
 
 interface HookPushedRefFlags {
   remoteName: string;
-  remoteUrl: string;
   localBranch: string;
   remoteBranch: string;
   headSha: string;
@@ -173,50 +172,56 @@ interface HookPushedRefFlags {
 
 async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> {
   const flags = parseHookPushedRefFlags(argv, deps.stderr);
-  if (flags === undefined) return 1;
+  if (flags === undefined) return 0;
 
-  const result = await postPrtokensForCurrentRepo({
-    cwd: deps.cwd,
-    dryRun: false,
-    json: false,
-    verbose: false,
-    stdout: deps.stdout,
-    stderr: deps.stderr,
-    readAllUsage: deps.readAllUsage,
-    resolvePullRequest: deps.resolvePullRequest,
-    ensureGhReady: deps.ensureGhReady,
-    upsertPrComment: deps.upsertPrComment,
-  });
-
-  if (result.kind === 'no-pr') {
-    const queuedAt = deps.now().toISOString();
-    deps.enqueuePendingPr(deps.queuePath, {
-      id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
-      repoRoot: deps.cwd,
-      remoteName: flags.remoteName,
-      remoteUrl: flags.remoteUrl,
-      localBranch: flags.localBranch,
-      remoteBranch: flags.remoteBranch,
-      headSha: flags.headSha,
-      queuedAt,
-      attempts: 0,
-      status: 'pending',
-      lastResult: result.message,
+  try {
+    const result = await postPrtokensForCurrentRepo({
+      cwd: deps.cwd,
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
     });
-    await scheduleProcessQueue(deps);
-    return 0;
-  }
 
-  if (result.kind === 'gh-not-ready' || result.kind === 'post-failed') {
+    if (result.kind === 'no-pr') {
+      const queuedAt = deps.now().toISOString();
+      deps.enqueuePendingPr(deps.queuePath, {
+        id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
+        repoRoot: deps.cwd,
+        remoteName: flags.remoteName,
+        localBranch: flags.localBranch,
+        remoteBranch: flags.remoteBranch,
+        headSha: flags.headSha,
+        queuedAt,
+        attempts: 0,
+        status: 'pending',
+        lastResult: result.message,
+      });
+      await scheduleProcessQueue(deps);
+      return 0;
+    }
+
+    if (result.kind === 'gh-not-ready' || result.kind === 'post-failed') {
+      return 0;
+    }
+    printPostResult(result, deps.stdout, deps.stderr);
+    return 0;
+  } catch (error) {
+    deps.stderr(error instanceof Error ? error.message : String(error));
     return 0;
   }
-  printPostResult(result, deps.stdout, deps.stderr);
-  return 0;
 }
 
 async function runProcessQueue(deps: CliDeps): Promise<number> {
+  const originalQueue = deps.readPendingQueue(deps.queuePath);
+  const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
   await deps.processPendingPrJobs({
-    queue: deps.readPendingQueue(deps.queuePath),
+    queue: originalQueue,
     now: deps.now(),
     retryWindowMs: 30 * 60_000,
     retentionMs: 24 * 60 * 60_000,
@@ -233,9 +238,22 @@ async function runProcessQueue(deps: CliDeps): Promise<number> {
       ensureGhReady: deps.ensureGhReady,
       upsertPrComment: deps.upsertPrComment,
     }),
-    writeQueue: (queue) => deps.writePendingQueue(deps.queuePath, queue),
+    writeQueue: (queue) => {
+      const latestQueue = deps.readPendingQueue(deps.queuePath);
+      deps.writePendingQueue(deps.queuePath, mergeProcessedQueue(originalJobIds, queue, latestQueue));
+    },
   });
   return 0;
+}
+
+function mergeProcessedQueue(originalJobIds: Set<string>, processedQueue: PendingPrQueue, latestQueue: PendingPrQueue): PendingPrQueue {
+  return {
+    version: 1,
+    jobs: [
+      ...processedQueue.jobs.filter((job) => originalJobIds.has(job.id)),
+      ...latestQueue.jobs.filter((job) => !originalJobIds.has(job.id)),
+    ],
+  };
 }
 
 function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => void): HookPushedRefFlags | undefined {
@@ -256,7 +274,6 @@ function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => vo
     if (values['remote-name'] && values['remote-url'] && values['local-branch'] && values['remote-branch'] && values['head-sha']) {
       return {
         remoteName: values['remote-name'],
-        remoteUrl: values['remote-url'],
         localBranch: values['local-branch'],
         remoteBranch: values['remote-branch'],
         headSha: values['head-sha'],
