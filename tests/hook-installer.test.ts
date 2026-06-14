@@ -95,9 +95,13 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('exit "$status"');
     expect(hookContent).toContain('rm -f "$stdin_file"');
     expect(hookContent).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
-    expect(hookContent).toContain('prtokens_local_sha="$local_sha" prtokens_remote_sha="$remote_sha"');
     expect(hookContent).toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
-    expect(hookContent).toContain('"$prtokens_bin" >/dev/null 2>&1 </dev/null');
+    expect(hookContent).toContain('"$prtokens_bin" __hook-pushed-ref');
+    expect(hookContent).toContain('--remote-name "$remote_name"');
+    expect(hookContent).toContain('--remote-url "$remote_url"');
+    expect(hookContent).toContain('--local-branch "$local_branch"');
+    expect(hookContent).toContain('--remote-branch "$remote_branch"');
+    expect(hookContent).toContain('--head-sha "$local_sha"');
     expect(hookContent).toContain(') >/dev/null 2>&1 &');
     expect(hookContent).toContain('exit 0');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
@@ -314,7 +318,7 @@ describe('installGlobalPrePushHook', () => {
     expect(content.startsWith(existing)).toBe(true);
     expect(content).toContain('# >>> prtokens >>>');
     expect(content).toContain('prtokens_previous_status=$?');
-    expect(content).toContain('prtokens_local_sha="$local_sha" prtokens_remote_sha="$remote_sha" "$prtokens_bin" >/dev/null 2>&1 </dev/null');
+    expect(content).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(content).not.toContain('stdin_file=');
     expect(content).not.toContain('repo_common_dir=');
     expect(content).not.toContain('"$repo_hook" "$@"');
@@ -341,7 +345,7 @@ describe('installGlobalPrePushHook', () => {
     expect(content).toContain('exit 0');
     const previousStatusIndex = content.indexOf('prtokens_previous_status=$?');
     const previousStatusExitIndex = content.indexOf('exit "$prtokens_previous_status"');
-    const backgroundLaunchIndex = content.indexOf('prtokens_local_sha="$local_sha" prtokens_remote_sha="$remote_sha" "$prtokens_bin" >/dev/null 2>&1 </dev/null');
+    const backgroundLaunchIndex = content.indexOf('"$prtokens_bin" __hook-pushed-ref');
     expect(previousStatusExitIndex).toBeLessThan(backgroundLaunchIndex);
   });
 
@@ -470,7 +474,7 @@ describe('installGlobalPrePushHook', () => {
     const content = files.get('/custom/hooks/pre-push') ?? '';
     expect(result.hookAction).toBe('updated-existing-block');
     expect(content).toContain('prtokens_previous_status=$?');
-    expect(content).toContain('prtokens_local_sha="$local_sha" prtokens_remote_sha="$remote_sha" "$prtokens_bin" >/dev/null 2>&1 </dev/null');
+    expect(content).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(content).not.toContain('stdin_file=');
     expect(content).not.toContain('repo_common_dir=');
     expect(content).not.toContain('"$repo_hook" "$@"');
@@ -570,7 +574,7 @@ describe('installGlobalPrePushHook', () => {
     });
     expect(result.hookBody).toContain('# >>> prtokens >>>');
     expect(result.hookBody).toContain("echo '/usr/local/bin/prtokens'");
-    expect(result.hookBody).toContain('prtokens_local_sha="$local_sha" prtokens_remote_sha="$remote_sha" "$prtokens_bin" >/dev/null 2>&1 </dev/null');
+    expect(result.hookBody).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
     expect(deps.fs.chmodSync).not.toHaveBeenCalled();
