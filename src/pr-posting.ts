@@ -37,10 +37,20 @@ export interface PostPrtokensOptions {
 
 export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): Promise<PostPrtokensResult> {
   const runner = options.runner ?? defaultCommandRunner;
-  const resolvedPr = await options.resolvePullRequest({
-    cwd: options.cwd,
-    ...(options.prNumber === undefined ? {} : { prNumber: options.prNumber }),
-  });
+  let resolvedPr;
+  try {
+    resolvedPr = await options.resolvePullRequest({
+      cwd: options.cwd,
+      ...(options.prNumber === undefined ? {} : { prNumber: options.prNumber }),
+      ...(options.runner === undefined ? {} : { runner }),
+    });
+  } catch (error) {
+    if (isGhSetupError(error)) {
+      return { kind: 'gh-not-ready', message: ghSetupMessage };
+    }
+
+    throw error;
+  }
 
   if (resolvedPr.kind === 'no-pr') {
     return { kind: 'no-pr', branch: resolvedPr.branch, message: resolvedPr.message };
@@ -212,4 +222,17 @@ function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch:
 
 function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
   return priced.buckets;
+}
+
+function isGhSetupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr) : '';
+  const detail = `${message}\n${stderr}`.toLowerCase();
+
+  return (
+    detail.includes('spawn gh enoent') ||
+    detail.includes('gh: command not found') ||
+    detail.includes('gh auth login') ||
+    detail.includes('authentication required')
+  );
 }

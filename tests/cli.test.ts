@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { isEntrypoint, runCli } from '../src/cli.js';
 import { renderPrComment } from '../src/comment-renderer.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo } from '../src/pr-posting.js';
 
 function usageEvent(overrides = {}) {
   return {
@@ -564,6 +565,52 @@ describe('runCli', () => {
     expect(payload.markdown).toContain('| `abcdef1` | Add CLI wiring | 100 | 10 | ~$1.00 | 1 |');
     expect(payload.markdown).not.toContain('uncommitted tail');
     expect(payload.markdown).not.toContain('~$3.00');
+  });
+});
+
+describe('postPrtokensForCurrentRepo', () => {
+  it('passes the provided runner to PR resolution', async () => {
+    const deps = createDeps();
+    const runner = { run: vi.fn() };
+
+    await expect(postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: true,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+      runner,
+    })).resolves.toMatchObject({ kind: 'dry-run' });
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo', runner });
+  });
+
+  it('normalizes gh setup failures from PR resolution', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockRejectedValue(new Error('spawn gh ENOENT')),
+    });
+
+    await expect(postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    })).resolves.toEqual({ kind: 'gh-not-ready', message: ghSetupMessage });
+
+    expect(deps.readAllUsage).not.toHaveBeenCalled();
+    expect(deps.ensureGhReady).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
   });
 });
 
