@@ -35,6 +35,7 @@ export interface CliDeps {
   resolvePullRequest: typeof resolvePullRequest;
   ensureGhReady: typeof ensureGhReady;
   upsertPrComment: typeof upsertPrComment;
+  runGhPrCreate(args: string[]): Promise<number>;
   runPreflight: () => PreflightResult;
   installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
   queuePath: string;
@@ -59,6 +60,10 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
   const cliDeps = withDefaultDeps(deps);
   if (argv[0] === 'init') {
     return runInit(argv.slice(1), cliDeps);
+  }
+
+  if (argv[0] === 'pr' && argv[1] === 'create') {
+    return runPrCreate(argv.slice(2), cliDeps);
   }
 
   if (argv[0] === 'status') {
@@ -134,6 +139,7 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     resolvePullRequest: deps.resolvePullRequest ?? resolvePullRequest,
     ensureGhReady: deps.ensureGhReady ?? ensureGhReady,
     upsertPrComment: deps.upsertPrComment ?? upsertPrComment,
+    runGhPrCreate: deps.runGhPrCreate ?? runGhPrCreate,
     runPreflight: deps.runPreflight ?? (() => runPreflight(hookInstallerDeps)),
     installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
     queuePath: deps.queuePath ?? defaultQueuePath(process.env),
@@ -157,6 +163,14 @@ function resolvePrtokensBinPath(): string {
   }
 }
 
+function runGhPrCreate(args: string[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('gh', ['pr', 'create', ...args], { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
 function runInit(argv: string[], deps: CliDeps): number {
   const flags = parseInitFlags(argv, deps.stderr);
   if (flags === undefined) {
@@ -171,6 +185,38 @@ function runInit(argv: string[], deps: CliDeps): number {
   }
 
   deps.stdout(formatInitResult(install, preflight));
+  return 0;
+}
+
+async function runPrCreate(argv: string[], deps: CliDeps): Promise<number> {
+  const separatorIndex = argv.indexOf('--');
+  const ghArgs = separatorIndex === -1 ? argv : argv.slice(separatorIndex + 1);
+  const createExitCode = await deps.runGhPrCreate(ghArgs);
+  if (createExitCode !== 0) return createExitCode;
+
+  const result = await postPrtokensForCurrentRepo({
+    cwd: deps.cwd,
+    dryRun: false,
+    json: false,
+    verbose: false,
+    stdout: deps.stdout,
+    stderr: deps.stderr,
+    readAllUsage: deps.readAllUsage,
+    resolvePullRequest: deps.resolvePullRequest,
+    ensureGhReady: deps.ensureGhReady,
+    upsertPrComment: deps.upsertPrComment,
+  });
+
+  if (result.kind === 'post-failed') {
+    deps.stderr(`prtokens could not post the PR comment: ${result.error}`);
+    return 0;
+  }
+  if (result.kind === 'gh-not-ready') {
+    deps.stderr(result.message);
+    return 0;
+  }
+
+  printPostResult(result, deps.stdout, deps.stderr);
   return 0;
 }
 

@@ -79,6 +79,7 @@ function createDeps(overrides = {}) {
     resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
     upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
+    runGhPrCreate: vi.fn().mockResolvedValue(0),
     runPreflight: vi.fn().mockReturnValue({
       checks: [
         { name: 'Node.js', status: 'ok', message: 'Node.js 22.13.0 satisfies >=22.13.0.' },
@@ -217,6 +218,35 @@ describe('runCli', () => {
 
     expect(deps.readPendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json');
     expect(deps.stdout).toHaveBeenCalledWith(expect.stringContaining('Pending PR posts'));
+  });
+
+  it('wraps gh pr create and posts after success', async () => {
+    const deps = createDeps();
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR', '--body', 'Body'], deps)).resolves.toBe(0);
+
+    expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'My PR', '--body', 'Body']);
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves gh pr create failure exit code and does not post', async () => {
+    const deps = createDeps({ runGhPrCreate: vi.fn().mockResolvedValue(2) });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(2);
+
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
+  it('does not fail successful PR creation when comment posting fails', async () => {
+    const deps = createDeps({
+      upsertPrComment: vi.fn().mockResolvedValue({ ok: false, renderedMarkdown: 'markdown', error: 'api failed' }),
+    });
+
+    await expect(runCli(['pr', 'create', '--', '--title', 'My PR'], deps)).resolves.toBe(0);
+
+    expect(deps.stderr).toHaveBeenCalledWith('prtokens could not post the PR comment: api failed');
   });
 
   it('enqueues metadata when hook mode finds no PR', async () => {
