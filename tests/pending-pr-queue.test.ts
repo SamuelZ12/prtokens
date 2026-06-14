@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { enqueuePendingPr, formatQueueStatus, mergePendingQueue, readPendingQueue, scrubPendingQueue, updatePendingPrJob, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
 
 let tempDirs: string[] = [];
@@ -237,6 +237,50 @@ describe('pending PR queue', () => {
     expect(firstResult).toBe('first');
     expect(calls).toEqual(['first']);
     expect(existsSync(`${queuePath}.process.lock`)).toBe(false);
+  });
+
+  it('does not delete a fresh process lock during stale cleanup', async () => {
+    vi.resetModules();
+    const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const queuePath = tempQueuePath();
+    const processLockPath = `${queuePath}.process.lock`;
+    mkdirSync(processLockPath);
+    writeFileSync(join(processLockPath, 'pid'), '999999');
+    const staleTime = new Date(Date.now() - 60_000);
+    utimesSync(processLockPath, staleTime, staleTime);
+    const directProcessLockDeletes: string[] = [];
+
+    vi.doMock('node:fs', () => ({
+      ...actualFs,
+      renameSync: vi.fn((oldPath: string, newPath: string) => {
+        actualFs.renameSync(oldPath, newPath);
+        if (oldPath === processLockPath) {
+          actualFs.mkdirSync(processLockPath);
+          actualFs.writeFileSync(join(processLockPath, 'pid'), String(process.pid));
+        }
+      }),
+      rmSync: vi.fn((path: string, options?: Parameters<typeof rmSync>[1]) => {
+        if (path === processLockPath) {
+          directProcessLockDeletes.push(path);
+          throw new Error('deleted active process lock');
+        }
+        return actualFs.rmSync(path, options);
+      }),
+    }));
+
+    try {
+      const { withPendingQueueProcessLock: withMockedProcessLock } = await import('../src/pending-pr-queue.js');
+      const callback = vi.fn().mockResolvedValue('processed');
+
+      await expect(withMockedProcessLock(queuePath, callback)).resolves.toBeUndefined();
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(directProcessLockDeletes).toEqual([]);
+      expect(readFileSync(join(processLockPath, 'pid'), 'utf8')).toBe(String(process.pid));
+    } finally {
+      vi.doUnmock('node:fs');
+      vi.resetModules();
+    }
   });
 
   it('skips persisted jobs with invalid dates or attempts', () => {

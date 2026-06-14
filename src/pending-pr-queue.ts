@@ -261,13 +261,37 @@ function tryAcquireProcessLock(lockPath: string): boolean {
       return true;
     } catch (error) {
       if (!isErrnoException(error) || error.code !== 'EEXIST') throw error;
-      if (!isLiveProcessLock(lockPath) && isStaleQueueLock(lockPath)) {
-        rmSync(lockPath, { recursive: true, force: true });
+      if (quarantineStaleProcessLock(lockPath)) {
         continue;
       }
       return false;
     }
   }
+}
+
+function quarantineStaleProcessLock(lockPath: string): boolean {
+  if (isLiveProcessLock(lockPath) || !isStaleQueueLock(lockPath)) return false;
+
+  const stalePath = `${lockPath}.stale.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  try {
+    renameSync(lockPath, stalePath);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === 'ENOENT') return true;
+    throw error;
+  }
+
+  if (!isLiveProcessLock(stalePath) && isStaleQueueLock(stalePath)) {
+    rmSync(stalePath, { recursive: true, force: true });
+    return true;
+  }
+
+  try {
+    renameSync(stalePath, lockPath);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === 'EEXIST') return false;
+    throw error;
+  }
+  return false;
 }
 
 function isLiveProcessLock(lockPath: string): boolean {
