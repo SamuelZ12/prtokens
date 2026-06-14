@@ -98,17 +98,21 @@ describe('renderPrComment', () => {
     expect(JSON.parse(authorMarkerPayload(body, 'samuel')).agents).toEqual(agents);
   });
 
-  it('renders an Agents line for one agent', () => {
+  it('renders singular labels for one model and one agent', () => {
     const body = renderPrComment({
       currentAuthor: {
         ...currentAuthor,
+        models: ['claude-sonnet-4-6'],
         agents: [{ agent: 'claude-code', costUsd: 3.2, inputTokens: 100, outputTokens: 10, sessionCount: 1 }],
       },
     });
 
-    expect(body).toContain('Agents: `claude-code`');
-    expect(body).not.toContain('Agents: `claude-code` ~$3.20');
-    expect(body).toContain('Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code`\n\n<details>');
+    expect(body).toContain('Model: `claude-sonnet-4-6`');
+    expect(body).not.toContain('Models: `claude-sonnet-4-6`');
+    expect(body).toContain('Agent: `claude-code`');
+    expect(body).not.toContain('Agents: `claude-code`');
+    expect(body).not.toContain('Agent: `claude-code` ~$3.20');
+    expect(body).toContain('Model: `claude-sonnet-4-6`\nAgent: `claude-code`\n\n<details>');
   });
 
   it('preserves legacy author markers without agents metadata', () => {
@@ -299,7 +303,7 @@ describe('renderPrComment', () => {
     expect(JSON.parse(payload)).toMatchObject({ login: 'unsafe', models: ['claude-->unsafe'] });
 
     const body = renderPrComment({ existingBody, currentAuthor });
-    expect(body).toContain('Models: `claude-->unsafe`');
+    expect(body).toContain('Model: `claude-->unsafe`');
     expect(body).toContain('### 🪙 This PR cost ~$5.83 in tokens');
   });
 

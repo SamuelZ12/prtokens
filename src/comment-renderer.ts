@@ -261,13 +261,14 @@ function renderSummaryLine(summary: AuthorSummary): string {
 
 function renderModels(models: string[]): string {
   if (models.length === 0) return 'Models: none';
+  if (models.length === 1) return `Model: \`${models[0]}\``;
   return `Models: ${models.map((model) => `\`${model}\``).join(', ')}`;
 }
 
 function renderAgents(agents: RenderAgentInput[] | undefined): string[] {
   if (agents === undefined || agents.length === 0) return [];
   const sortedAgents = [...agents].sort((left, right) => right.costUsd - left.costUsd);
-  if (sortedAgents.length === 1) return [`Agents: \`${sortedAgents[0].agent}\``];
+  if (sortedAgents.length === 1) return [`Agent: \`${sortedAgents[0].agent}\``];
   return [`Agents: ${sortedAgents.map((agent) => `\`${agent.agent}\` ${formatCost(agent.costUsd)}`).join(' · ')}`];
 }
 
