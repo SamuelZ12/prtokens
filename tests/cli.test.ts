@@ -450,6 +450,7 @@ describe('runCli', () => {
       lastResult: 'posted PR #42',
     };
     const deps = createDeps({
+      queueProcessMaxPasses: 1,
       readPendingQueue: vi.fn()
         .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
         .mockReturnValueOnce({ version: 1, jobs: [concurrentJob] }),
@@ -465,6 +466,72 @@ describe('runCli', () => {
     expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
       version: 1,
       jobs: [processedJob, concurrentJob],
+    });
+  });
+
+  it('continues processing when a concurrent enqueue leaves a new retryable pending job', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const concurrentJob = {
+      id: 'job-concurrent',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/other',
+      remoteBranch: 'feature/other',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:00:30.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const completedOriginalJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const completedConcurrentJob = {
+      ...concurrentJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #43',
+    };
+    const deps = createDeps({
+      queueRetryDelayMs: 10,
+      queueProcessMaxPasses: 3,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedOriginalJob, concurrentJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedOriginalJob, concurrentJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        if (options.queue.jobs.some((job) => job.id === 'job-concurrent')) {
+          options.writeQueue({ version: 1, jobs: [completedOriginalJob, completedConcurrentJob] });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedOriginalJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledWith(10);
+    expect(deps.writePendingQueue).toHaveBeenLastCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [completedOriginalJob, completedConcurrentJob],
     });
   });
 

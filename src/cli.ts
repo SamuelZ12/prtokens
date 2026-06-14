@@ -354,7 +354,7 @@ async function runProcessQueue(deps: CliDeps): Promise<number> {
         },
       });
 
-      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now, originalJobIds)) {
+      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now)) {
         break;
       }
       await deps.sleep(deps.queueRetryDelayMs);
@@ -376,8 +376,8 @@ function mergeProcessedQueue(originalJobIds: Set<string>, processedQueue: Pendin
   };
 }
 
-function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date, retryableJobIds: Set<string>): boolean {
-  return queue.jobs.some((job) => retryableJobIds.has(job.id) && job.status === 'pending' && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs);
+function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date): boolean {
+  return queue.jobs.some((job) => job.status === 'pending' && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs);
 }
 
 function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | undefined): PendingPrJob {
