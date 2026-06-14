@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { enqueuePendingPr, formatQueueStatus, readPendingQueue, updatePendingPrJob, type PendingPrJob } from '../src/pending-pr-queue.js';
+import { enqueuePendingPr, formatQueueStatus, readPendingQueue, updatePendingPrJob, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
 
 let tempDirs: string[] = [];
 
@@ -37,22 +37,67 @@ function job(overrides: Partial<PendingPrJob> = {}): PendingPrJob {
   };
 }
 
+function jobWithForbiddenFields(overrides: Record<string, unknown> = {}): PendingPrJob {
+  return {
+    ...job(),
+    inputTokens: 123,
+    outputTokens: 456,
+    transcript: 'conversation transcript',
+    prompt: 'raw prompt',
+    completion: 'raw completion',
+    rawUsageEvents: [{ inputTokens: 123, outputTokens: 456 }],
+    tokenDetails: { cacheRead: 12 },
+    renderedMarkdown: '## PR comment',
+    ...overrides,
+  } as unknown as PendingPrJob;
+}
+
+function expectMetadataOnly(raw: string) {
+  expect(raw).not.toContain('inputTokens');
+  expect(raw).not.toContain('outputTokens');
+  expect(raw).not.toContain('transcript');
+  expect(raw).not.toContain('prompt');
+  expect(raw).not.toContain('completion');
+  expect(raw).not.toContain('rawUsageEvents');
+  expect(raw).not.toContain('tokenDetails');
+  expect(raw).not.toContain('renderedMarkdown');
+}
+
 describe('pending PR queue', () => {
   it('stores metadata only and upserts by repo branch and head sha', () => {
     const queuePath = tempQueuePath();
 
-    enqueuePendingPr(queuePath, job());
-    enqueuePendingPr(queuePath, job({ lastResult: 'second enqueue' }));
+    enqueuePendingPr(queuePath, jobWithForbiddenFields());
+    enqueuePendingPr(queuePath, jobWithForbiddenFields({ lastResult: 'second enqueue' }));
 
-    const raw = readFileSync(queuePath, 'utf8');
-    expect(raw).not.toContain('inputTokens');
-    expect(raw).not.toContain('outputTokens');
-    expect(raw).not.toContain('transcript');
-    expect(raw).not.toContain('renderedMarkdown');
+    let raw = readFileSync(queuePath, 'utf8');
+    expectMetadataOnly(raw);
 
-    const queue = readPendingQueue(queuePath);
+    let queue = readPendingQueue(queuePath);
     expect(queue.jobs).toHaveLength(1);
     expect(queue.jobs[0]).toMatchObject({ status: 'pending', attempts: 0, lastResult: 'second enqueue' });
+
+    updatePendingPrJob(queuePath, 'repo-feature-abcdef1', {
+      lastResult: 'updated with forbidden fields',
+      transcript: 'patch transcript',
+      renderedMarkdown: 'patch markdown',
+    } as unknown as Partial<PendingPrJob>);
+
+    raw = readFileSync(queuePath, 'utf8');
+    expectMetadataOnly(raw);
+
+    queue = readPendingQueue(queuePath);
+    expect(queue.jobs).toHaveLength(1);
+    expect(queue.jobs[0]).toMatchObject({ status: 'pending', attempts: 0, lastResult: 'updated with forbidden fields' });
+
+    writePendingQueue(queuePath, { version: 1, jobs: [jobWithForbiddenFields({ id: 'direct-write' })] });
+
+    raw = readFileSync(queuePath, 'utf8');
+    expectMetadataOnly(raw);
+
+    queue = readPendingQueue(queuePath);
+    expect(queue.jobs).toHaveLength(1);
+    expect(queue.jobs[0]).toMatchObject({ id: 'direct-write', status: 'pending', attempts: 0 });
   });
 
   it('updates existing queue jobs by id', () => {

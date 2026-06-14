@@ -40,26 +40,27 @@ export function readPendingQueue(queuePath: string): PendingPrQueue {
   }
 
   const parsed = JSON.parse(readFileSync(queuePath, 'utf8')) as Partial<PendingPrQueue>;
-  return { version: 1, jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [] };
+  return { version: 1, jobs: Array.isArray(parsed.jobs) ? parsed.jobs.map((job) => sanitizePendingPrJob(job as PendingPrJob)) : [] };
 }
 
 export function writePendingQueue(queuePath: string, queue: PendingPrQueue): void {
   mkdirSync(dirname(queuePath), { recursive: true });
   const tempPath = `${queuePath}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify({ version: 1, jobs: queue.jobs }, null, 2)}\n`);
+  writeFileSync(tempPath, `${JSON.stringify({ version: 1, jobs: queue.jobs.map(sanitizePendingPrJob) }, null, 2)}\n`);
   renameSync(tempPath, queuePath);
 }
 
 export function enqueuePendingPr(queuePath: string, job: PendingPrJob): PendingPrJob {
   const queue = readPendingQueue(queuePath);
-  const existingIndex = queue.jobs.findIndex((entry) => entry.id === job.id);
+  const sanitizedJob = sanitizePendingPrJob(job);
+  const existingIndex = queue.jobs.findIndex((entry) => entry.id === sanitizedJob.id);
   if (existingIndex === -1) {
-    queue.jobs.push(job);
+    queue.jobs.push(sanitizedJob);
   } else {
-    queue.jobs[existingIndex] = { ...queue.jobs[existingIndex], ...job, attempts: queue.jobs[existingIndex].attempts };
+    queue.jobs[existingIndex] = sanitizePendingPrJob({ ...queue.jobs[existingIndex], ...sanitizedJob, attempts: queue.jobs[existingIndex].attempts });
   }
   writePendingQueue(queuePath, queue);
-  return job;
+  return existingIndex === -1 ? sanitizedJob : queue.jobs[existingIndex];
 }
 
 export function updatePendingPrJob(queuePath: string, id: string, patch: Partial<PendingPrJob>): PendingPrJob | undefined {
@@ -67,7 +68,7 @@ export function updatePendingPrJob(queuePath: string, id: string, patch: Partial
   const index = queue.jobs.findIndex((job) => job.id === id);
   if (index === -1) return undefined;
 
-  const updated = { ...queue.jobs[index], ...patch };
+  const updated = sanitizePendingPrJob({ ...queue.jobs[index], ...patch } as PendingPrJob);
   queue.jobs[index] = updated;
   writePendingQueue(queuePath, queue);
   return updated;
@@ -118,4 +119,25 @@ function ageLabel(iso: string, now: Date): string {
 
 function sanitizeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'repo';
+}
+
+function sanitizePendingPrJob(job: PendingPrJob): PendingPrJob {
+  const sanitized: PendingPrJob = {
+    id: job.id,
+    repoRoot: job.repoRoot,
+    remoteName: job.remoteName,
+    localBranch: job.localBranch,
+    remoteBranch: job.remoteBranch,
+    headSha: job.headSha,
+    queuedAt: job.queuedAt,
+    attempts: job.attempts,
+    status: job.status,
+    lastResult: job.lastResult,
+  };
+
+  if (job.repository !== undefined) sanitized.repository = job.repository;
+  if (job.remoteUrl !== undefined) sanitized.remoteUrl = job.remoteUrl;
+  if (job.lastAttemptAt !== undefined) sanitized.lastAttemptAt = job.lastAttemptAt;
+
+  return sanitized;
 }
