@@ -84,13 +84,15 @@ export async function resolvePullRequest(input: {
   runner?: CommandRunner;
   cwd?: string;
   prNumber?: number;
+  branch?: string;
+  headSha?: string;
 } = {}): Promise<ResolvePrResult> {
   const runner = input.runner ?? defaultCommandRunner;
   let branch = '';
   let cwd = input.cwd;
   let repoRoot = input.cwd ?? '';
   try {
-    branch = (await runner.run('git', ['branch', '--show-current'], { cwd: input.cwd })).stdout.trim();
+    branch = input.branch ?? (await runner.run('git', ['branch', '--show-current'], { cwd: input.cwd })).stdout.trim();
     repoRoot = (await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd: input.cwd })).stdout.trim();
     cwd = repoRoot || input.cwd;
   } catch (error) {
@@ -102,7 +104,7 @@ export async function resolvePullRequest(input: {
 
   let pr: GhPullRequest;
   try {
-    pr = await readPullRequest(runner, cwd, input.prNumber);
+    pr = await readPullRequest(runner, cwd, input.prNumber, input.branch);
   } catch (error) {
     if (isNoPullRequestError(error)) {
       return { kind: 'no-pr', branch, message: 'No pull request found for current branch.' };
@@ -113,7 +115,7 @@ export async function resolvePullRequest(input: {
   const repository = repositoryFromPrUrl(pr.url);
   const currentUserLogin = (await readAuthenticatedUserLogin(runner, cwd)) ?? pr.author.login;
   const worktreeRoots = await readWorktreeRoots(runner, cwd, repoRoot || cwd || '');
-  const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName);
+  const localCommits = await readLocalCommits(runner, cwd, pr.baseRefName, input.headSha);
   const localCommitsByPatchId = new Map<string, LocalCommit>();
   for (const commit of localCommits) {
     if (commit.patchId !== undefined) {
@@ -211,15 +213,16 @@ async function readAuthenticatedUserLogin(runner: CommandRunner, cwd: string | u
   }
 }
 
-async function readPullRequest(runner: CommandRunner, cwd: string | undefined, prNumber: number | undefined): Promise<GhPullRequest> {
-  const args = prNumber === undefined ? ['pr', 'view', '--json', prJsonFields] : ['pr', 'view', String(prNumber), '--json', prJsonFields];
+async function readPullRequest(runner: CommandRunner, cwd: string | undefined, prNumber: number | undefined, branch: string | undefined): Promise<GhPullRequest> {
+  const selector = prNumber === undefined ? branch : String(prNumber);
+  const args = selector === undefined ? ['pr', 'view', '--json', prJsonFields] : ['pr', 'view', selector, '--json', prJsonFields];
   const result = await runner.run('gh', args, { cwd });
 
   return JSON.parse(result.stdout) as GhPullRequest;
 }
 
-async function readLocalCommits(runner: CommandRunner, cwd: string | undefined, baseRefName: string): Promise<LocalCommit[]> {
-  const range = `origin/${baseRefName}..HEAD`;
+async function readLocalCommits(runner: CommandRunner, cwd: string | undefined, baseRefName: string, headSha: string | undefined): Promise<LocalCommit[]> {
+  const range = `origin/${baseRefName}..${headSha ?? 'HEAD'}`;
   const result = await runner.run('git', ['log', '--format=%H%x00%aI%x00%s', range], { cwd });
   const commits: LocalCommit[] = [];
 

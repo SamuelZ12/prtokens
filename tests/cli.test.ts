@@ -233,6 +233,11 @@ describe('runCli', () => {
       '--head-sha', 'abcdef1234567890',
     ], deps)).resolves.toBe(0);
 
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+      cwd: '/repo',
+      branch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+    });
     expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
       repoRoot: '/repo',
       remoteName: 'origin',
@@ -363,6 +368,36 @@ describe('runCli', () => {
     expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
       version: 1,
       jobs: [processedJob, concurrentJob],
+    });
+  });
+
+  it('processes queued jobs against the queued remote branch and head SHA', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'HEAD',
+      remoteBranch: 'feature/queued',
+      headSha: 'feedface1234',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: 1,
+      readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [originalJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        await options.post(originalJob);
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+      cwd: '/repo',
+      branch: 'feature/queued',
+      headSha: 'feedface1234',
     });
   });
 

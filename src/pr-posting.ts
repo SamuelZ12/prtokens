@@ -26,6 +26,8 @@ export interface PostPrtokensOptions {
   json: boolean;
   verbose: boolean;
   prNumber?: number;
+  branch?: string;
+  headSha?: string;
   stdout(message: string): void;
   stderr(message: string): void;
   readAllUsage: typeof readAllUsage;
@@ -42,6 +44,8 @@ export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): 
     resolvedPr = await options.resolvePullRequest({
       cwd: options.cwd,
       ...(options.prNumber === undefined ? {} : { prNumber: options.prNumber }),
+      ...(options.branch === undefined ? {} : { branch: options.branch }),
+      ...(options.headSha === undefined ? {} : { headSha: options.headSha }),
       ...(options.runner === undefined ? {} : { runner }),
     });
   } catch (error) {

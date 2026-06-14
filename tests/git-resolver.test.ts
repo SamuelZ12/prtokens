@@ -54,6 +54,35 @@ describe('resolvePullRequest', () => {
     expect(result.kind === 'ok' ? result.pr.number : undefined).toBe(12);
   });
 
+  it('uses a provided branch selector and head SHA for pushed-ref resolution', async () => {
+    const runner = createRunner((command, args, options) => {
+      if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'checkout-branch\n', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel') return { stdout: '/repo\n', stderr: '' };
+      if (command === 'gh' && args.join(' ') === `pr view feature/pushed --json ${prJsonFieldsForTest}`) {
+        return { stdout: JSON.stringify({ ...prJson, headRefName: 'feature/pushed' }), stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'log --format=%H%x00%aI%x00%s origin/main..feedface1234') {
+        return { stdout: 'abc\u00002026-06-12T10:00:00Z\u0000local feat\n', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'show abc --pretty=format:') return { stdout: 'local diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'show def --pretty=format:') return { stdout: 'pr diff', stderr: '' };
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'local diff') {
+        return { stdout: 'patch-1 abc\n', stderr: '' };
+      }
+      if (command === 'git' && args.join(' ') === 'patch-id --stable' && options?.input === 'pr diff') {
+        return { stdout: 'patch-1 def\n', stderr: '' };
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    const result = await resolvePullRequest({ runner, branch: 'feature/pushed', headSha: 'feedface1234' });
+
+    expect(result.kind).toBe('ok');
+    expect(result.branch).toBe('feature/pushed');
+    expect(runner.commands).toContainEqual({ command: 'gh', args: ['pr', 'view', 'feature/pushed', '--json', prJsonFieldsForTest], input: undefined });
+    expect(runner.commands).toContainEqual({ command: 'git', args: ['log', '--format=%H%x00%aI%x00%s', 'origin/main..feedface1234'], input: undefined });
+  });
+
   it('includes the authenticated GitHub user login in PR info', async () => {
     const runner = createRunner((command, args) => {
       if (command === 'git' && args.join(' ') === 'branch --show-current') return { stdout: 'feature\n', stderr: '' };
@@ -271,3 +300,5 @@ describe('resolvePullRequest', () => {
     ]);
   });
 });
+
+const prJsonFieldsForTest = 'number,url,headRefName,baseRefName,author,commits';
