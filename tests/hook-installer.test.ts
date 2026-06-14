@@ -95,12 +95,15 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('exit "$status"');
     expect(hookContent).toContain('rm -f "$stdin_file"');
     expect(hookContent).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
+    expect(hookContent).toContain('while read local_ref local_sha remote_ref remote_sha; do');
+    expect(hookContent).toContain('done < "$stdin_file"');
     expect(hookContent).toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
     expect(hookContent).toContain(
-      'if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${local_ref#refs/heads/}" != "$local_ref" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
+      'if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
     );
+    expect(hookContent).not.toContain('[ "${local_ref#refs/heads/}" != "$local_ref" ]');
     expect(hookContent).toContain('"$prtokens_bin" __hook-pushed-ref');
-    expect(hookContent.indexOf('[ "${local_ref#refs/heads/}" != "$local_ref" ]')).toBeLessThan(
+    expect(hookContent.indexOf('[ "${remote_ref#refs/heads/}" != "$remote_ref" ]')).toBeLessThan(
       hookContent.indexOf('"$prtokens_bin" __hook-pushed-ref'),
     );
     expect(hookContent).toContain('--remote-name "$remote_name"');
@@ -325,7 +328,8 @@ describe('installGlobalPrePushHook', () => {
     expect(content).toContain('# >>> prtokens >>>');
     expect(content).toContain('prtokens_previous_status=$?');
     expect(content).toContain('stdin_file="$(mktemp)"');
-    expect(content).toContain('read local_ref local_sha remote_ref remote_sha < "$stdin_file" || true');
+    expect(content).toContain('while read local_ref local_sha remote_ref remote_sha; do');
+    expect(content).toContain('done < "$stdin_file"');
     expect(content).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(content).not.toContain('repo_common_dir=');
     expect(content).not.toContain('"$repo_hook" "$@"');
@@ -482,7 +486,8 @@ describe('installGlobalPrePushHook', () => {
     expect(result.hookAction).toBe('updated-existing-block');
     expect(content).toContain('prtokens_previous_status=$?');
     expect(content).toContain('stdin_file="$(mktemp)"');
-    expect(content).toContain('read local_ref local_sha remote_ref remote_sha < "$stdin_file" || true');
+    expect(content).toContain('while read local_ref local_sha remote_ref remote_sha; do');
+    expect(content).toContain('done < "$stdin_file"');
     expect(content).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(content).not.toContain('repo_common_dir=');
     expect(content).not.toContain('"$repo_hook" "$@"');
