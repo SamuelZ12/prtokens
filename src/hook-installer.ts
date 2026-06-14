@@ -410,7 +410,10 @@ function renderManagedBlock(pathPrefix: HookPathPrefix, includeFinalExit: boolea
   }
 
   lines.push(
-    `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(pathPrefix.prtokensBinPath)})"`,
+    `prtokens_bin=${shellQuote(pathPrefix.prtokensBinPath)}`,
+    'if [ ! -x "$prtokens_bin" ]; then',
+    `  prtokens_bin="$(command -v prtokens 2>/dev/null || printf '%s\\n' ${shellQuote(pathPrefix.prtokensBinPath)})"`,
+    'fi',
     '(',
     "  trap '' HUP",
     '  remote_name="$1"',
