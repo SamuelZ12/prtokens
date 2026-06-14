@@ -75,7 +75,7 @@ function allUsage(overrides = {}) {
 }
 
 function createDeps(overrides = {}) {
-  return {
+  const deps = {
     readAllUsage: vi.fn().mockResolvedValue(allUsage()),
     resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
@@ -111,6 +111,16 @@ function createDeps(overrides = {}) {
     stdout: vi.fn(),
     stderr: vi.fn(),
     ...overrides,
+  };
+  return {
+    ...deps,
+    mergePendingQueue: 'mergePendingQueue' in overrides
+      ? overrides.mergePendingQueue
+      : vi.fn((queuePath, mergeFn) => {
+        const merged = mergeFn(deps.readPendingQueue(queuePath));
+        deps.writePendingQueue(queuePath, merged);
+        return merged;
+      }),
   };
 }
 
@@ -219,7 +229,6 @@ describe('runCli', () => {
           repoRoot: '/repo',
           repository: 'acme/prtokens',
           remoteName: 'origin',
-          remoteUrl: 'git@github.com:acme/prtokens.git',
           localBranch: 'feature/prtokens',
           remoteBranch: 'feature/prtokens',
           headSha: 'abcdef1234567890',
@@ -450,6 +459,7 @@ describe('runCli', () => {
     await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
 
     expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+    expect(deps.mergePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.any(Function));
     expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
       version: 1,
       jobs: [processedJob, concurrentJob],

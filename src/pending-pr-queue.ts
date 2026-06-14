@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -9,7 +9,6 @@ export interface PendingPrJob {
   repoRoot: string;
   repository?: string;
   remoteName: string;
-  remoteUrl?: string;
   localBranch: string;
   remoteBranch: string;
   headSha: string;
@@ -26,6 +25,8 @@ export interface PendingPrQueue {
 }
 
 type UnknownRecord = Record<string, unknown>;
+const queueLockWaitMs = 5_000;
+const staleQueueLockMs = 30_000;
 
 export function defaultQueuePath(env: NodeJS.ProcessEnv = process.env): string {
   const base = env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
@@ -37,6 +38,63 @@ export function makePendingPrJobId(input: { repoRoot: string; remoteBranch: stri
 }
 
 export function readPendingQueue(queuePath: string): PendingPrQueue {
+  return readPendingQueueUnlocked(queuePath);
+}
+
+export function writePendingQueue(queuePath: string, queue: PendingPrQueue): void {
+  withQueueLock(queuePath, () => {
+    writePendingQueueUnlocked(queuePath, queue);
+  });
+}
+
+export function mergePendingQueue(queuePath: string, mergeFn: (queue: PendingPrQueue) => PendingPrQueue): PendingPrQueue {
+  return withQueueLock(queuePath, () => {
+    const merged = sanitizePendingQueue(mergeFn(readPendingQueueUnlocked(queuePath)));
+    writePendingQueueUnlocked(queuePath, merged);
+    return merged;
+  });
+}
+
+export function enqueuePendingPr(queuePath: string, job: PendingPrJob): PendingPrJob {
+  const sanitizedJob = sanitizePendingPrJob(job);
+  if (!sanitizedJob) throw new Error('Invalid pending PR job');
+
+  let writtenJob: PendingPrJob | undefined;
+  mergePendingQueue(queuePath, (queue) => {
+    const existingIndex = queue.jobs.findIndex((entry) => entry.id === sanitizedJob.id);
+    if (existingIndex === -1) {
+      queue.jobs.push(sanitizedJob);
+      writtenJob = sanitizedJob;
+      return queue;
+    }
+
+    const updated = sanitizePendingPrJob({ ...queue.jobs[existingIndex], ...sanitizedJob, attempts: queue.jobs[existingIndex].attempts });
+    if (!updated) throw new Error('Invalid pending PR job');
+    queue.jobs[existingIndex] = updated;
+    writtenJob = updated;
+    return queue;
+  });
+
+  if (!writtenJob) throw new Error('Invalid pending PR job');
+  return writtenJob;
+}
+
+export function updatePendingPrJob(queuePath: string, id: string, patch: Partial<PendingPrJob>): PendingPrJob | undefined {
+  let writtenJob: PendingPrJob | undefined;
+  mergePendingQueue(queuePath, (queue) => {
+    const index = queue.jobs.findIndex((job) => job.id === id);
+    if (index === -1) return queue;
+
+    const updated = sanitizePendingPrJob({ ...queue.jobs[index], ...patch });
+    if (!updated) return queue;
+    queue.jobs[index] = updated;
+    writtenJob = updated;
+    return queue;
+  });
+  return writtenJob;
+}
+
+function readPendingQueueUnlocked(queuePath: string): PendingPrQueue {
   if (!existsSync(queuePath)) {
     return { version: 1, jobs: [] };
   }
@@ -45,39 +103,11 @@ export function readPendingQueue(queuePath: string): PendingPrQueue {
   return { version: 1, jobs: Array.isArray(parsed.jobs) ? sanitizePendingPrJobs(parsed.jobs) : [] };
 }
 
-export function writePendingQueue(queuePath: string, queue: PendingPrQueue): void {
+function writePendingQueueUnlocked(queuePath: string, queue: PendingPrQueue): void {
   mkdirSync(dirname(queuePath), { recursive: true });
   const tempPath = `${queuePath}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify({ version: 1, jobs: sanitizePendingPrJobs(queue.jobs) }, null, 2)}\n`);
+  writeFileSync(tempPath, `${JSON.stringify(sanitizePendingQueue(queue), null, 2)}\n`);
   renameSync(tempPath, queuePath);
-}
-
-export function enqueuePendingPr(queuePath: string, job: PendingPrJob): PendingPrJob {
-  const queue = readPendingQueue(queuePath);
-  const sanitizedJob = sanitizePendingPrJob(job);
-  if (!sanitizedJob) throw new Error('Invalid pending PR job');
-  const existingIndex = queue.jobs.findIndex((entry) => entry.id === sanitizedJob.id);
-  if (existingIndex === -1) {
-    queue.jobs.push(sanitizedJob);
-  } else {
-    const updated = sanitizePendingPrJob({ ...queue.jobs[existingIndex], ...sanitizedJob, attempts: queue.jobs[existingIndex].attempts });
-    if (!updated) throw new Error('Invalid pending PR job');
-    queue.jobs[existingIndex] = updated;
-  }
-  writePendingQueue(queuePath, queue);
-  return existingIndex === -1 ? sanitizedJob : queue.jobs[existingIndex];
-}
-
-export function updatePendingPrJob(queuePath: string, id: string, patch: Partial<PendingPrJob>): PendingPrJob | undefined {
-  const queue = readPendingQueue(queuePath);
-  const index = queue.jobs.findIndex((job) => job.id === id);
-  if (index === -1) return undefined;
-
-  const updated = sanitizePendingPrJob({ ...queue.jobs[index], ...patch });
-  if (!updated) return undefined;
-  queue.jobs[index] = updated;
-  writePendingQueue(queuePath, queue);
-  return updated;
 }
 
 export function pruneQueue(queue: PendingPrQueue, now: Date, retentionMs: number): PendingPrQueue {
@@ -127,6 +157,10 @@ function sanitizeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'repo';
 }
 
+function sanitizePendingQueue(queue: PendingPrQueue): PendingPrQueue {
+  return { version: 1, jobs: sanitizePendingPrJobs(queue.jobs) };
+}
+
 function sanitizePendingPrJobs(jobs: unknown[]): PendingPrJob[] {
   return jobs.flatMap((job) => {
     const sanitized = sanitizePendingPrJob(job);
@@ -162,10 +196,55 @@ function sanitizePendingPrJob(job: unknown): PendingPrJob | undefined {
   };
 
   if (isString(job.repository)) sanitized.repository = job.repository;
-  if (isString(job.remoteUrl)) sanitized.remoteUrl = job.remoteUrl;
   if (job.lastAttemptAt !== undefined) sanitized.lastAttemptAt = job.lastAttemptAt;
 
   return sanitized;
+}
+
+function withQueueLock<T>(queuePath: string, fn: () => T): T {
+  mkdirSync(dirname(queuePath), { recursive: true });
+  const lockPath = `${queuePath}.lock`;
+  acquireQueueLock(lockPath);
+  try {
+    return fn();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
+}
+
+function acquireQueueLock(lockPath: string): void {
+  const deadline = Date.now() + queueLockWaitMs;
+  while (true) {
+    try {
+      mkdirSync(lockPath);
+      return;
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== 'EEXIST') throw error;
+      if (isStaleQueueLock(lockPath)) {
+        rmSync(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for pending PR queue lock at ${lockPath}`);
+      waitForQueueLock();
+    }
+  }
+}
+
+function isStaleQueueLock(lockPath: string): boolean {
+  try {
+    return Date.now() - statSync(lockPath).mtimeMs > staleQueueLockMs;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function waitForQueueLock(): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+}
+
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
 
 function isRecord(value: unknown): value is UnknownRecord {

@@ -17,7 +17,7 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 import { processPendingPrJobs } from './pending-pr-worker.js';
 import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
@@ -42,6 +42,7 @@ export interface CliDeps {
   queuePath: string;
   readPendingQueue: typeof readPendingQueue;
   writePendingQueue: typeof writePendingQueue;
+  mergePendingQueue: typeof mergePendingQueue;
   enqueuePendingPr: typeof enqueuePendingPr;
   processPendingPrJobs: typeof processPendingPrJobs;
   now(): Date;
@@ -147,6 +148,7 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     queuePath: deps.queuePath ?? defaultQueuePath(process.env),
     readPendingQueue: deps.readPendingQueue ?? readPendingQueue,
     writePendingQueue: deps.writePendingQueue ?? writePendingQueue,
+    mergePendingQueue: deps.mergePendingQueue ?? mergePendingQueue,
     enqueuePendingPr: deps.enqueuePendingPr ?? enqueuePendingPr,
     processPendingPrJobs: deps.processPendingPrJobs ?? processPendingPrJobs,
     now: deps.now ?? (() => new Date()),
@@ -343,9 +345,7 @@ async function runProcessQueue(deps: CliDeps): Promise<number> {
         upsertPrComment: deps.upsertPrComment,
       }),
       writeQueue: (queue) => {
-        const latestQueue = deps.readPendingQueue(deps.queuePath);
-        queueAfterPass = mergeProcessedQueue(originalJobIds, queue, latestQueue);
-        deps.writePendingQueue(deps.queuePath, queueAfterPass);
+        queueAfterPass = deps.mergePendingQueue(deps.queuePath, (latestQueue) => mergeProcessedQueue(originalJobIds, queue, latestQueue));
       },
     });
 

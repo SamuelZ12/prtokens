@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { enqueuePendingPr, formatQueueStatus, readPendingQueue, updatePendingPrJob, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
+import { enqueuePendingPr, formatQueueStatus, mergePendingQueue, readPendingQueue, updatePendingPrJob, writePendingQueue, type PendingPrJob } from '../src/pending-pr-queue.js';
 
 let tempDirs: string[] = [];
 
@@ -24,7 +24,6 @@ function job(overrides: Partial<PendingPrJob> = {}): PendingPrJob {
     repoRoot: '/repo',
     repository: 'acme/prtokens',
     remoteName: 'origin',
-    remoteUrl: 'git@github.com:acme/prtokens.git',
     localBranch: 'feature/prtokens',
     remoteBranch: 'feature/prtokens',
     headSha: 'abcdef1234567890',
@@ -61,6 +60,8 @@ function expectMetadataOnly(raw: string) {
   expect(raw).not.toContain('rawUsageEvents');
   expect(raw).not.toContain('tokenDetails');
   expect(raw).not.toContain('renderedMarkdown');
+  expect(raw).not.toContain('remoteUrl');
+  expect(raw).not.toContain('git@github.com:acme/prtokens.git');
 }
 
 describe('pending PR queue', () => {
@@ -135,12 +136,14 @@ describe('pending PR queue', () => {
             remoteUrl: { url: 'git@github.com:acme/prtokens.git' },
             transcript: 'conversation transcript',
           },
-          job({
-            id: 'valid-with-optionals',
-            repository: 'acme/prtokens',
+          {
+            ...job({
+              id: 'valid-with-optionals',
+              repository: 'acme/prtokens',
+              lastAttemptAt: '2026-06-14T00:03:00.000Z',
+            }),
             remoteUrl: 'git@github.com:acme/prtokens.git',
-            lastAttemptAt: '2026-06-14T00:03:00.000Z',
-          }),
+          },
         ],
       }),
     );
@@ -155,9 +158,9 @@ describe('pending PR queue', () => {
     expect(queue.jobs[1]).toMatchObject({
       id: 'valid-with-optionals',
       repository: 'acme/prtokens',
-      remoteUrl: 'git@github.com:acme/prtokens.git',
       lastAttemptAt: '2026-06-14T00:03:00.000Z',
     });
+    expect(queue.jobs[1]).not.toHaveProperty('remoteUrl');
 
     expect(() => formatQueueStatus(queue)).not.toThrow();
   });
@@ -167,6 +170,31 @@ describe('pending PR queue', () => {
     writeFileSync(queuePath, JSON.stringify({ version: 1, jobs: { id: 'not-an-array' } }));
 
     expect(readPendingQueue(queuePath)).toEqual({ version: 1, jobs: [] });
+  });
+
+  it('merges queue changes against latest persisted jobs', () => {
+    const queuePath = tempQueuePath();
+    const latestJob = job({ id: 'latest-job', localBranch: 'feature/latest', remoteBranch: 'feature/latest' });
+    const updatedJob = { ...job(), status: 'completed' as const, attempts: 1, lastResult: 'posted PR #42' };
+
+    writePendingQueue(queuePath, {
+      version: 1,
+      jobs: [
+        job({ remoteUrl: 'https://user:token@github.com/acme/prtokens.git' } as unknown as Partial<PendingPrJob>),
+        latestJob,
+      ],
+    });
+
+    const written = mergePendingQueue(queuePath, (latestQueue) => ({
+      version: 1,
+      jobs: [updatedJob, ...latestQueue.jobs.filter((entry) => entry.id !== updatedJob.id)],
+    }));
+
+    expect(written.jobs.map((entry) => entry.id)).toEqual(['repo-feature-abcdef1', 'latest-job']);
+    expect(written.jobs[0]).toMatchObject({ status: 'completed', attempts: 1, lastResult: 'posted PR #42' });
+    expect(written.jobs[1]).toMatchObject({ id: 'latest-job', status: 'pending' });
+    expect(readFileSync(queuePath, 'utf8')).not.toContain('remoteUrl');
+    expect(readPendingQueue(queuePath)).toEqual(written);
   });
 
   it('skips persisted jobs with invalid dates or attempts', () => {

@@ -107,7 +107,8 @@ describe('installGlobalPrePushHook', () => {
       hookContent.indexOf('"$prtokens_bin" __hook-pushed-ref'),
     );
     expect(hookContent).toContain('--remote-name "$remote_name"');
-    expect(hookContent).toContain('--remote-url "$remote_url"');
+    expect(hookContent).not.toContain('git remote get-url');
+    expect(hookContent).not.toContain('--remote-url');
     expect(hookContent).toContain('--local-branch "$local_branch"');
     expect(hookContent).toContain('--remote-branch "$remote_branch"');
     expect(hookContent).toContain('--head-sha "$local_sha"');

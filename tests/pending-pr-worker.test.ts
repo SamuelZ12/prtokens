@@ -8,7 +8,6 @@ function job(overrides: Partial<PendingPrJob> = {}): PendingPrJob {
     repoRoot: '/repo',
     repository: 'acme/prtokens',
     remoteName: 'origin',
-    remoteUrl: 'git@github.com:acme/prtokens.git',
     localBranch: 'feature/prtokens',
     remoteBranch: 'feature/prtokens',
     headSha: 'abcdef1234567890',
