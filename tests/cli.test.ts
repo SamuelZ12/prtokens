@@ -182,6 +182,17 @@ describe('runCli', () => {
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
   });
 
+  it('uses the shared posting flow for default report mode', async () => {
+    const deps = createDeps();
+
+    await expect(runCli([], deps)).resolves.toBe(0);
+
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+    expect(deps.readAllUsage).toHaveBeenCalledTimes(1);
+    expect(deps.ensureGhReady).toHaveBeenCalledTimes(1);
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
+  });
+
   it('passes resolved worktree roots to usage readers', async () => {
     const deps = createDeps({
       cwd: '/repo/.worktrees/feature',

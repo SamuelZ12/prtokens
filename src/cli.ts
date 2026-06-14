@@ -3,9 +3,7 @@
 import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { attributeUsageToCommits } from './attribution-engine.js';
-import { renderPrComment, type RenderAuthorInput } from './comment-renderer.js';
-import { defaultCommandRunner, resolvePullRequest } from './git-resolver.js';
+import { resolvePullRequest } from './git-resolver.js';
 import { ensureGhReady, upsertPrComment } from './github-poster.js';
 import {
   createDefaultHookInstallerDeps,
@@ -18,11 +16,8 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { priceAttributionResult, type PricedAttributionBucket, type PricedAttributionResult } from './pricing.js';
-import { readAllUsage, type UsageDiagnostics } from './usage-readers.js';
-import type { AgentName, CommitRecord, UsageEvent } from './types.js';
-
-type AgentSummary = NonNullable<RenderAuthorInput['agents']>[number];
+import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
+import { readAllUsage } from './usage-readers.js';
 
 export interface CliDeps {
   cwd: string;
@@ -43,9 +38,6 @@ interface CliFlags {
   prNumber?: number;
 }
 
-const noUsageMessage = 'No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).';
-const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
-
 export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promise<number> {
   const cliDeps = withDefaultDeps(deps);
   if (argv[0] === 'init') {
@@ -57,12 +49,21 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
     return 1;
   }
 
-  let resolvedPr;
   try {
-    resolvedPr = await cliDeps.resolvePullRequest({
+    const result = await postPrtokensForCurrentRepo({
       cwd: cliDeps.cwd,
+      dryRun: flags.dryRun,
+      json: flags.json,
+      verbose: flags.verbose,
       ...(flags.prNumber === undefined ? {} : { prNumber: flags.prNumber }),
+      stdout: cliDeps.stdout,
+      stderr: cliDeps.stderr,
+      readAllUsage: cliDeps.readAllUsage,
+      resolvePullRequest: cliDeps.resolvePullRequest,
+      ensureGhReady: cliDeps.ensureGhReady,
+      upsertPrComment: cliDeps.upsertPrComment,
     });
+    return printPostResult(result, cliDeps.stdout, cliDeps.stderr);
   } catch (error) {
     if (isGhSetupError(error)) {
       cliDeps.stderr(ghSetupMessage);
@@ -71,77 +72,6 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
 
     throw error;
   }
-  if (resolvedPr.kind === 'no-pr') {
-    cliDeps.stdout(resolvedPr.message);
-    return 0;
-  }
-
-  const usage = await cliDeps.readAllUsage({
-    repoRoot: resolvedPr.repoRoot,
-    repoRootAliases: resolvedPr.worktreeRoots,
-  });
-  if (flags.verbose) {
-    printDiagnostics(usage.diagnostics, cliDeps.stderr);
-  }
-
-  if (usage.events.length === 0) {
-    cliDeps.stdout(noUsageMessage);
-    return 0;
-  }
-
-  const attribution = attributeUsageToCommits({
-    events: usage.events,
-    commits: resolvedPr.commits,
-    branch: resolvedPr.branch,
-  });
-  const priced = priceAttributionResult(attribution);
-  const agentTotals = toAgentSummaries(usage.events, resolvedPr.commits, resolvedPr.branch);
-  const currentAuthor = toRenderAuthorInput(priced, resolvedPr.pr.currentUserLogin ?? resolvedPr.pr.authorLogin, agentTotals);
-  const renderMarkdown = (existingBody?: string) => renderPrComment({ existingBody, currentAuthor });
-
-  if (flags.dryRun) {
-    const markdown = renderMarkdown();
-    cliDeps.stdout(markdown);
-    return 0;
-  }
-
-  if (flags.json) {
-    const markdown = renderMarkdown();
-    cliDeps.stdout(
-      JSON.stringify({
-        pr: resolvedPr.pr,
-        attribution,
-        pricing: {
-          totalCostUsd: priced.totalCostUsd,
-          warnings: priced.warnings ?? [],
-          buckets: priced.buckets,
-          uncommittedTail: priced.uncommittedTail,
-        },
-        agentTotals,
-        diagnostics: usage.diagnostics,
-        markdown,
-      }),
-    );
-    return 0;
-  }
-
-  const ghReady = await cliDeps.ensureGhReady(defaultCommandRunner);
-  if (!ghReady.ok) {
-    cliDeps.stderr(ghReady.message);
-    return 1;
-  }
-
-  const postResult = await cliDeps.upsertPrComment({
-    runner: defaultCommandRunner,
-    repository: resolvedPr.pr.repository,
-    prNumber: resolvedPr.pr.number,
-    renderMarkdown,
-  });
-  if (!postResult.ok) {
-    cliDeps.stdout(postResult.renderedMarkdown);
-  }
-
-  return 0;
 }
 
 export async function main(): Promise<number> {
@@ -316,21 +246,6 @@ function parseCliFlags(argv: string[], stderr: (message: string) => void): CliFl
   };
 }
 
-function printDiagnostics(diagnostics: UsageDiagnostics, stderr: (message: string) => void): void {
-  const agents = ['claude-code', 'codex', 'opencode'] satisfies AgentName[];
-
-  for (const agent of agents) {
-    const source = diagnostics[agent];
-    stderr(`${agent}: scanned-file-count: ${source.scannedFileCount}`);
-    stderr(`${agent}: malformed-line-count: ${source.malformedLineCount}`);
-    stderr(`${agent}: skipped-line-count: ${source.skippedLineCount}`);
-    stderr(`${agent}: dedupe-count: ${source.dedupedEventCount}`);
-    for (const warning of source.warningMessages) {
-      stderr(`${agent}: ${warning}`);
-    }
-  }
-}
-
 function isGhSetupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : '';
   const stderr = typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr) : '';
@@ -342,64 +257,4 @@ function isGhSetupError(error: unknown): boolean {
     detail.includes('gh auth login') ||
     detail.includes('authentication required')
   );
-}
-
-function toRenderAuthorInput(
-  priced: PricedAttributionResult,
-  authorLogin: string,
-  agents?: RenderAuthorInput['agents'],
-): RenderAuthorInput {
-  const rows = allPricedBuckets(priced).map((bucket) => ({
-    sha: bucket.commitSha ?? bucket.label ?? 'uncommitted',
-    message: bucket.message ?? bucket.label ?? '',
-    inputTokens: bucket.inputTokens,
-    outputTokens: bucket.outputTokens,
-    cacheWriteTokens: bucket.cacheWriteTokens,
-    cacheReadTokens: bucket.cacheReadTokens,
-    costUsd: bucket.costUsd,
-    sessionCount: bucket.sessionCount,
-  }));
-
-  return {
-    login: authorLogin,
-    totalCostUsd: priced.totalCostUsd,
-    inputTokens: priced.totals.inputTokens,
-    outputTokens: priced.totals.outputTokens,
-    cacheWriteTokens: priced.totals.cacheWriteTokens,
-    cacheReadTokens: priced.totals.cacheReadTokens,
-    sessionCount: priced.totals.sessionCount,
-    models: [...new Set(allPricedBuckets(priced).flatMap((bucket) => bucket.models))],
-    ...(agents === undefined ? {} : { agents }),
-    attributedPercent: priced.coverage.attributedPercent,
-    lowConfidencePercent: priced.coverage.lowConfidencePercent,
-    rows,
-  };
-}
-
-function toAgentSummaries(events: UsageEvent[], commits: CommitRecord[], branch: string): AgentSummary[] {
-  const agents = ['claude-code', 'codex', 'opencode'] satisfies AgentName[];
-  const summaries: AgentSummary[] = [];
-
-  for (const agent of agents) {
-    const agentEvents = events.filter((event) => event.agent === agent);
-    if (agentEvents.length === 0) continue;
-
-    const attribution = attributeUsageToCommits({ events: agentEvents, commits, branch });
-    const priced = priceAttributionResult(attribution);
-    if (priced.totals.attributedEventCount === 0) continue;
-
-    summaries.push({
-      agent,
-      costUsd: priced.totalCostUsd,
-      inputTokens: priced.totals.inputTokens,
-      outputTokens: priced.totals.outputTokens,
-      sessionCount: priced.totals.sessionCount,
-    });
-  }
-
-  return summaries.sort((left, right) => right.costUsd - left.costUsd);
-}
-
-function allPricedBuckets(priced: PricedAttributionResult): PricedAttributionBucket[] {
-  return priced.buckets;
 }
