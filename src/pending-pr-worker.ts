@@ -27,13 +27,27 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
       continue;
     }
 
-    const remoteHead = await options.readRemoteHead(job);
+    let remoteHead: string | undefined;
+    try {
+      remoteHead = await options.readRemoteHead(job);
+    } catch (error) {
+      jobs.push({ ...job, status: 'failed', lastAttemptAt: options.now.toISOString(), lastResult: `remote head check failed: ${errorMessage(error)}` });
+      continue;
+    }
+
     if (remoteHead !== undefined && remoteHead !== job.headSha) {
       jobs.push({ ...job, status: 'failed', lastAttemptAt: options.now.toISOString(), lastResult: 'branch moved before PR appeared' });
       continue;
     }
 
-    const result = await options.post(job);
+    let result: PostPrtokensResult;
+    try {
+      result = await options.post(job);
+    } catch (error) {
+      jobs.push({ ...job, attempts: job.attempts + 1, status: 'failed', lastAttemptAt: options.now.toISOString(), lastResult: `posting failed: ${errorMessage(error)}` });
+      continue;
+    }
+
     jobs.push(applyPostResult(job, result, options.now));
   }
 
@@ -57,4 +71,10 @@ function applyPostResult(job: PendingPrJob, result: PostPrtokensResult, now: Dat
     case 'json':
       return { ...base, status: 'failed', lastResult: `unexpected ${result.kind} result` };
   }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  const message = String(error);
+  return message.length > 0 ? message : 'unknown error';
 }
