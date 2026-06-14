@@ -98,7 +98,7 @@ describe('renderPrComment', () => {
     expect(JSON.parse(authorMarkerPayload(body, 'samuel')).agents).toEqual(agents);
   });
 
-  it('does not render an Agents line for one agent', () => {
+  it('renders an Agents line for one agent', () => {
     const body = renderPrComment({
       currentAuthor: {
         ...currentAuthor,
@@ -106,8 +106,8 @@ describe('renderPrComment', () => {
       },
     });
 
-    expect(body).not.toContain('Agents:');
-    expect(body).toContain('Models: `claude-sonnet-4-6`, `claude-opus-4-8`\n\n<details>');
+    expect(body).toContain('Agents: `claude-code` ~$3.20');
+    expect(body).toContain('Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code` ~$3.20\n\n<details>');
   });
 
   it('preserves legacy author markers without agents metadata', () => {

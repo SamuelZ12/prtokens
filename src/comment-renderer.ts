@@ -265,7 +265,7 @@ function renderModels(models: string[]): string {
 }
 
 function renderAgents(agents: RenderAgentInput[] | undefined): string[] {
-  if (agents === undefined || agents.length < 2) return [];
+  if (agents === undefined || agents.length === 0) return [];
   const sortedAgents = [...agents].sort((left, right) => right.costUsd - left.costUsd);
   return [`Agents: ${sortedAgents.map((agent) => `\`${agent.agent}\` ${formatCost(agent.costUsd)}`).join(' · ')}`];
 }

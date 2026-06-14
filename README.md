@@ -16,7 +16,7 @@ prtokens finds the open PR, reads your local transcripts, and posts or updates t
 
 ## What it posts
 
-A single comment showing total estimated cost, token and session counts, models used, a per-agent cost split when multiple agents contributed, and a collapsible per-commit table. The same comment is updated in place on later runs; multiple contributors each get their own labeled section.
+A single comment showing total estimated cost, token and session counts, models used, agent costs, and a collapsible per-commit table. The same comment is updated in place on later runs; multiple contributors each get their own labeled section.
 
 *Example (commit table collapsed by default):*
 
