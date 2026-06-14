@@ -461,6 +461,50 @@ describe('runCli', () => {
     });
   });
 
+  it('keeps terminal processed jobs over pending same-ID queue updates', async () => {
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    };
+    const processedCompletedJob = {
+      ...originalJob,
+      attempts: 1,
+      status: 'completed',
+      lastAttemptAt: '2026-06-14T00:00:10.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const concurrentPendingJob = {
+      ...originalJob,
+      attempts: 2,
+      lastAttemptAt: '2026-06-14T00:00:20.000Z',
+      lastResult: 'No pull request found for current branch.',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: 1,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [concurrentPendingJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        options.writeQueue({ version: 1, jobs: [processedCompletedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.writePendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [processedCompletedJob],
+    });
+  });
+
   it('uses the shared posting flow for default report mode', async () => {
     const deps = createDeps();
 

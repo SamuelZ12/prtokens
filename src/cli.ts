@@ -292,6 +292,7 @@ function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | u
 }
 
 function isMoreAdvancedJob(candidate: PendingPrJob, baseline: PendingPrJob): boolean {
+  if (isTerminalStatus(baseline.status) && candidate.status === 'pending') return false;
   if (isTerminalStatus(candidate.status) && baseline.status === 'pending') return true;
   if (candidate.attempts !== baseline.attempts) return candidate.attempts > baseline.attempts;
 
