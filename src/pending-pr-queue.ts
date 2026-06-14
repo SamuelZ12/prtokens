@@ -26,7 +26,9 @@ export interface PendingPrQueue {
 
 type UnknownRecord = Record<string, unknown>;
 const queueLockWaitMs = 5_000;
+const processLockWaitMs = 5_000;
 const staleQueueLockMs = 30_000;
+const lockPollMs = 20;
 
 export function defaultQueuePath(env: NodeJS.ProcessEnv = process.env): string {
   const base = env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
@@ -108,7 +110,7 @@ export function updatePendingPrJob(queuePath: string, id: string, patch: Partial
 export async function withPendingQueueProcessLock<T>(queuePath: string, fn: () => Promise<T>): Promise<T | undefined> {
   mkdirSync(dirname(queuePath), { recursive: true });
   const lockPath = `${queuePath}.process.lock`;
-  if (!tryAcquireProcessLock(lockPath)) return undefined;
+  if (!await acquireProcessLock(lockPath)) return undefined;
 
   try {
     return await fn();
@@ -253,7 +255,8 @@ function acquireQueueLock(lockPath: string): void {
   }
 }
 
-function tryAcquireProcessLock(lockPath: string): boolean {
+async function acquireProcessLock(lockPath: string): Promise<boolean> {
+  const deadline = Date.now() + processLockWaitMs;
   while (true) {
     try {
       mkdirSync(lockPath);
@@ -264,7 +267,8 @@ function tryAcquireProcessLock(lockPath: string): boolean {
       if (quarantineStaleProcessLock(lockPath)) {
         continue;
       }
-      return false;
+      if (Date.now() >= deadline) return false;
+      await waitForProcessLock(Math.min(lockPollMs, deadline - Date.now()));
     }
   }
 }
@@ -318,7 +322,11 @@ function isStaleQueueLock(lockPath: string): boolean {
 }
 
 function waitForQueueLock(): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, lockPollMs);
+}
+
+function waitForProcessLock(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {

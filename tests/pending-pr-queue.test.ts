@@ -7,6 +7,7 @@ import { enqueuePendingPr, formatQueueStatus, mergePendingQueue, readPendingQueu
 let tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   tempDirs = [];
 });
@@ -220,22 +221,36 @@ describe('pending PR queue', () => {
     expect(readFileSync(queuePath, 'utf8')).not.toContain('user:token');
   });
 
-  it('does not run two process-lock callbacks at the same time', async () => {
+  it('waits for a held process lock to be released without overlapping callbacks', async () => {
     const queuePath = tempQueuePath();
     const calls: string[] = [];
+    let releaseFirst!: () => void;
+    let firstEntered!: () => void;
+    const firstEnteredPromise = new Promise<void>((resolve) => { firstEntered = resolve; });
+    const releaseFirstPromise = new Promise<void>((resolve) => { releaseFirst = resolve; });
 
-    const firstResult = await withPendingQueueProcessLock(queuePath, async () => {
-      const secondResult = await withPendingQueueProcessLock(queuePath, async () => {
-        calls.push('second');
-        return 'second';
-      });
-      calls.push('first');
-      expect(secondResult).toBeUndefined();
+    const firstResultPromise = withPendingQueueProcessLock(queuePath, async () => {
+      calls.push('first-start');
+      firstEntered();
+      await releaseFirstPromise;
+      calls.push('first-end');
       return 'first';
     });
+    await firstEnteredPromise;
 
-    expect(firstResult).toBe('first');
-    expect(calls).toEqual(['first']);
+    const secondResultPromise = withPendingQueueProcessLock(queuePath, async () => {
+      calls.push('second');
+      return 'second';
+    });
+
+    await Promise.resolve();
+    expect(calls).toEqual(['first-start']);
+
+    releaseFirst();
+    await expect(firstResultPromise).resolves.toBe('first');
+    await expect(secondResultPromise).resolves.toBe('second');
+
+    expect(calls).toEqual(['first-start', 'first-end', 'second']);
     expect(existsSync(`${queuePath}.process.lock`)).toBe(false);
   });
 
@@ -269,10 +284,14 @@ describe('pending PR queue', () => {
     }));
 
     try {
+      vi.useFakeTimers();
       const { withPendingQueueProcessLock: withMockedProcessLock } = await import('../src/pending-pr-queue.js');
       const callback = vi.fn().mockResolvedValue('processed');
+      const resultPromise = withMockedProcessLock(queuePath, callback);
 
-      await expect(withMockedProcessLock(queuePath, callback)).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await expect(resultPromise).resolves.toBeUndefined();
 
       expect(callback).not.toHaveBeenCalled();
       expect(directProcessLockDeletes).toEqual([]);
