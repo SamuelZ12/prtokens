@@ -15,6 +15,7 @@ Every Claude Code, Codex, or OpenCode session burns tokens, but that cost is inv
 ## Test PR
 
 This temporary README note is used to verify the prtokens pull request workflow.
+It can be removed after the workflow test is complete.
 
 ## What it posts
 
