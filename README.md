@@ -12,6 +12,10 @@ Every Claude Code, Codex, or OpenCode session burns tokens, but that cost is inv
 - **One idempotent comment** — updates the same PR comment in place instead of stacking new ones, with a separate section per contributor.
 - **Local-only** — only the aggregate numbers leave your machine; transcripts never do.
 
+## Test PR
+
+This temporary README note is used to verify the prtokens pull request workflow.
+
 ## What it posts
 
 `prtokens` posts a single comment on the PR and updates that same comment on later runs. It shows the total estimated cost, a token/session summary, the models used (plus a per-agent cost split when more than one agent contributed), and a collapsible per-commit breakdown.
