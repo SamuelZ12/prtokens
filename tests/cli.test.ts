@@ -80,6 +80,7 @@ function createDeps(overrides = {}) {
     ensureGhReady: vi.fn().mockResolvedValue({ ok: true }),
     upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
     runGhPrCreate: vi.fn().mockResolvedValue(0),
+    runGitLsRemote: vi.fn().mockResolvedValue('abcdef1234567890'),
     runPreflight: vi.fn().mockReturnValue({
       checks: [
         { name: 'Node.js', status: 'ok', message: 'Node.js 22.13.0 satisfies >=22.13.0.' },
@@ -467,6 +468,29 @@ describe('runCli', () => {
       branch: 'feature/queued',
       headSha: 'feedface1234',
     });
+  });
+
+  it('processes queue with remote head checks', async () => {
+    const deps = createDeps({
+      readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    const call = deps.processPendingPrJobs.mock.calls[0]?.[0];
+    await expect(call.readRemoteHead({
+      id: 'job-remote-head',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: '1234567890abcdef',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'waiting for PR',
+    })).resolves.toBe('abcdef1234567890');
+    expect(deps.runGitLsRemote).toHaveBeenCalledWith('/repo', 'origin', 'refs/heads/feature/prtokens');
   });
 
   it('retries pending process-queue jobs with a bounded delay', async () => {

@@ -36,6 +36,7 @@ export interface CliDeps {
   ensureGhReady: typeof ensureGhReady;
   upsertPrComment: typeof upsertPrComment;
   runGhPrCreate(args: string[]): Promise<number>;
+  runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Promise<string | undefined>;
   runPreflight: () => PreflightResult;
   installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
   queuePath: string;
@@ -140,6 +141,7 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     ensureGhReady: deps.ensureGhReady ?? ensureGhReady,
     upsertPrComment: deps.upsertPrComment ?? upsertPrComment,
     runGhPrCreate: deps.runGhPrCreate ?? runGhPrCreate,
+    runGitLsRemote: deps.runGitLsRemote ?? runGitLsRemote,
     runPreflight: deps.runPreflight ?? (() => runPreflight(hookInstallerDeps)),
     installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
     queuePath: deps.queuePath ?? defaultQueuePath(process.env),
@@ -168,6 +170,23 @@ function runGhPrCreate(args: string[]): Promise<number> {
     const child = spawn('gh', ['pr', 'create', ...args], { stdio: 'inherit' });
     child.on('error', reject);
     child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
+function runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['ls-remote', remoteName, remoteRef], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+    let stdout = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        resolve(undefined);
+        return;
+      }
+      resolve(stdout.trim().split(/\s+/)[0] || undefined);
+    });
   });
 }
 
@@ -299,7 +318,7 @@ async function runProcessQueue(deps: CliDeps): Promise<number> {
       now,
       retryWindowMs: queueRetryWindowMs,
       retentionMs: queueRetentionMs,
-      readRemoteHead: async () => undefined,
+      readRemoteHead: (job) => deps.runGitLsRemote(job.repoRoot, job.remoteName, `refs/heads/${job.remoteBranch}`),
       post: (job) => postPrtokensForCurrentRepo({
         cwd: job.repoRoot,
         dryRun: false,
