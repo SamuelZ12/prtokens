@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.0 - 2026-06-14
+
+### Added
+
+- Add a local metadata-only pending PR queue so pre-push hooks can post PR token comments after a PR is created.
+- Add `prtokens status` to inspect pending PR post jobs.
+- Add `prtokens pr create -- <gh args>` to create a PR and process its token comment immediately.
+
+### Changed
+
+- Resolve pushed-branch PRs using branch and head SHA metadata for more reliable hook posting.
+- Keep hook-side queue processing non-blocking and bounded so `git push` is not failed by operational `prtokens` errors.
+
+### Fixed
+
+- Verify queued branch heads against the remote before posting to avoid stale pending PR jobs.
+- Serialize pending queue mutations and processing to avoid lost updates and duplicate side effects.
+- Harden pending queue storage by sanitizing metadata, skipping malformed jobs, and scrubbing legacy raw remote URLs.
+
+## 0.3.1 - 2026-06-13
+
+### Fixed
+
+- Exclude pre-PR history and uncommitted tail usage from PR token totals.
+- Hide attribution diagnostics from generated PR comments.
+- Prioritize source-reported costs in PR comment summaries.
+- Harden generated pre-push hook installation and execution behavior.
+- Price flat-rate cache usage when cache duration is not fully covered.
+
 ## 0.3.0 - 2026-06-13
 
 ### Added
