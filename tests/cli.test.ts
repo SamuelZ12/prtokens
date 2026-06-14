@@ -95,6 +95,12 @@ function createDeps(overrides = {}) {
       hookAction: 'installed',
       coreHooksPathAction: 'set',
     }),
+    queuePath: '/state/prtokens/pending-prs.json',
+    readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+    writePendingQueue: vi.fn(),
+    enqueuePendingPr: vi.fn(),
+    processPendingPrJobs: vi.fn().mockResolvedValue(undefined),
+    now: vi.fn(() => new Date('2026-06-14T00:00:00.000Z')),
     cwd: '/repo',
     stdout: vi.fn(),
     stderr: vi.fn(),
@@ -181,6 +187,58 @@ describe('runCli', () => {
 
     expect(deps.installGlobalPrePushHook).not.toHaveBeenCalled();
     expect(deps.resolvePullRequest).toHaveBeenCalledWith({ cwd: '/repo' });
+  });
+
+  it('prints queue status', async () => {
+    const deps = createDeps({
+      readPendingQueue: vi.fn().mockReturnValue({
+        version: 1,
+        jobs: [{
+          id: 'job-1',
+          repoRoot: '/repo',
+          repository: 'acme/prtokens',
+          remoteName: 'origin',
+          remoteUrl: 'git@github.com:acme/prtokens.git',
+          localBranch: 'feature/prtokens',
+          remoteBranch: 'feature/prtokens',
+          headSha: 'abcdef1234567890',
+          queuedAt: '2026-06-14T00:00:00.000Z',
+          attempts: 0,
+          status: 'pending',
+          lastResult: 'waiting for PR',
+        }],
+      }),
+    });
+
+    await expect(runCli(['status'], deps)).resolves.toBe(0);
+
+    expect(deps.readPendingQueue).toHaveBeenCalledWith('/state/prtokens/pending-prs.json');
+    expect(deps.stdout).toHaveBeenCalledWith(expect.stringContaining('Pending PR posts'));
+  });
+
+  it('enqueues metadata when hook mode finds no PR', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+    });
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--remote-url', 'git@github.com:acme/prtokens.git',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      status: 'pending',
+    }));
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
   });
 
   it('uses the shared posting flow for default report mode', async () => {

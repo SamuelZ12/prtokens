@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,8 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue } from './pending-pr-queue.js';
+import { processPendingPrJobs } from './pending-pr-worker.js';
 import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
 
@@ -29,6 +32,12 @@ export interface CliDeps {
   upsertPrComment: typeof upsertPrComment;
   runPreflight: () => PreflightResult;
   installGlobalPrePushHook: (options?: InstallOptions) => InstallResult;
+  queuePath: string;
+  readPendingQueue: typeof readPendingQueue;
+  writePendingQueue: typeof writePendingQueue;
+  enqueuePendingPr: typeof enqueuePendingPr;
+  processPendingPrJobs: typeof processPendingPrJobs;
+  now(): Date;
 }
 
 interface CliFlags {
@@ -42,6 +51,20 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}): Promi
   const cliDeps = withDefaultDeps(deps);
   if (argv[0] === 'init') {
     return runInit(argv.slice(1), cliDeps);
+  }
+
+  if (argv[0] === 'status') {
+    const queue = cliDeps.readPendingQueue(cliDeps.queuePath);
+    cliDeps.stdout(formatQueueStatus(queue, cliDeps.now()));
+    return 0;
+  }
+
+  if (argv[0] === '__hook-pushed-ref') {
+    return runHookPushedRef(argv.slice(1), cliDeps);
+  }
+
+  if (argv[0] === '__process-queue') {
+    return runProcessQueue(cliDeps);
   }
 
   const flags = parseCliFlags(argv, cliDeps.stderr);
@@ -105,6 +128,12 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     upsertPrComment: deps.upsertPrComment ?? upsertPrComment,
     runPreflight: deps.runPreflight ?? (() => runPreflight(hookInstallerDeps)),
     installGlobalPrePushHook: deps.installGlobalPrePushHook ?? ((options) => installGlobalPrePushHook(hookInstallerDeps, options)),
+    queuePath: deps.queuePath ?? defaultQueuePath(process.env),
+    readPendingQueue: deps.readPendingQueue ?? readPendingQueue,
+    writePendingQueue: deps.writePendingQueue ?? writePendingQueue,
+    enqueuePendingPr: deps.enqueuePendingPr ?? enqueuePendingPr,
+    processPendingPrJobs: deps.processPendingPrJobs ?? processPendingPrJobs,
+    now: deps.now ?? (() => new Date()),
   };
 }
 
@@ -132,6 +161,133 @@ function runInit(argv: string[], deps: CliDeps): number {
 
   deps.stdout(formatInitResult(install, preflight));
   return 0;
+}
+
+interface HookPushedRefFlags {
+  remoteName: string;
+  remoteUrl: string;
+  localBranch: string;
+  remoteBranch: string;
+  headSha: string;
+}
+
+async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> {
+  const flags = parseHookPushedRefFlags(argv, deps.stderr);
+  if (flags === undefined) return 1;
+
+  const result = await postPrtokensForCurrentRepo({
+    cwd: deps.cwd,
+    dryRun: false,
+    json: false,
+    verbose: false,
+    stdout: deps.stdout,
+    stderr: deps.stderr,
+    readAllUsage: deps.readAllUsage,
+    resolvePullRequest: deps.resolvePullRequest,
+    ensureGhReady: deps.ensureGhReady,
+    upsertPrComment: deps.upsertPrComment,
+  });
+
+  if (result.kind === 'no-pr') {
+    const queuedAt = deps.now().toISOString();
+    deps.enqueuePendingPr(deps.queuePath, {
+      id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
+      repoRoot: deps.cwd,
+      remoteName: flags.remoteName,
+      remoteUrl: flags.remoteUrl,
+      localBranch: flags.localBranch,
+      remoteBranch: flags.remoteBranch,
+      headSha: flags.headSha,
+      queuedAt,
+      attempts: 0,
+      status: 'pending',
+      lastResult: result.message,
+    });
+    await scheduleProcessQueue(deps);
+    return 0;
+  }
+
+  if (result.kind === 'gh-not-ready' || result.kind === 'post-failed') {
+    return 0;
+  }
+  printPostResult(result, deps.stdout, deps.stderr);
+  return 0;
+}
+
+async function runProcessQueue(deps: CliDeps): Promise<number> {
+  await deps.processPendingPrJobs({
+    queue: deps.readPendingQueue(deps.queuePath),
+    now: deps.now(),
+    retryWindowMs: 30 * 60_000,
+    retentionMs: 24 * 60 * 60_000,
+    readRemoteHead: async () => undefined,
+    post: (job) => postPrtokensForCurrentRepo({
+      cwd: job.repoRoot,
+      dryRun: false,
+      json: false,
+      verbose: false,
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    }),
+    writeQueue: (queue) => deps.writePendingQueue(deps.queuePath, queue),
+  });
+  return 0;
+}
+
+function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => void): HookPushedRefFlags | undefined {
+  try {
+    const parsed = parseArgs({
+      args: argv,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        'remote-name': { type: 'string' },
+        'remote-url': { type: 'string' },
+        'local-branch': { type: 'string' },
+        'remote-branch': { type: 'string' },
+        'head-sha': { type: 'string' },
+      },
+    });
+    const values = parsed.values;
+    if (values['remote-name'] && values['remote-url'] && values['local-branch'] && values['remote-branch'] && values['head-sha']) {
+      return {
+        remoteName: values['remote-name'],
+        remoteUrl: values['remote-url'],
+        localBranch: values['local-branch'],
+        remoteBranch: values['remote-branch'],
+        headSha: values['head-sha'],
+      };
+    }
+    stderr('Missing required hook pushed-ref metadata.');
+    return undefined;
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+}
+
+async function scheduleProcessQueue(deps: CliDeps): Promise<void> {
+  try {
+    if (deps.processPendingPrJobs === processPendingPrJobs) {
+      spawnDetachedProcessQueue();
+    } else {
+      await runProcessQueue(deps);
+    }
+  } catch (error) {
+    deps.stderr(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function spawnDetachedProcessQueue(): void {
+  const child = spawn(process.execPath, [resolvePrtokensBinPath(), '__process-queue'], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
 }
 
 function parseInitFlags(argv: string[], stderr: (message: string) => void): { dryRun: boolean } | undefined {
