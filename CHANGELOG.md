@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 - 2026-06-14
+
+### Fixed
+
+- Bound first-commit attribution so PR token totals exclude pre-branch work.
+
 ## 0.4.1 - 2026-06-14
 
 ### Fixed
