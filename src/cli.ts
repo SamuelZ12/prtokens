@@ -17,10 +17,15 @@ import {
   type PreflightCheck,
   type PreflightResult,
 } from './hook-installer.js';
-import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue, type PendingPrQueue } from './pending-pr-queue.js';
+import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, readPendingQueue, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 import { processPendingPrJobs } from './pending-pr-worker.js';
 import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
+
+const queueRetryWindowMs = 30 * 60_000;
+const queueRetentionMs = 24 * 60 * 60_000;
+const defaultQueueRetryDelayMs = 30_000;
+const defaultQueueProcessMaxPasses = Math.ceil(queueRetryWindowMs / defaultQueueRetryDelayMs);
 
 export interface CliDeps {
   cwd: string;
@@ -38,6 +43,9 @@ export interface CliDeps {
   enqueuePendingPr: typeof enqueuePendingPr;
   processPendingPrJobs: typeof processPendingPrJobs;
   now(): Date;
+  sleep(ms: number): Promise<void>;
+  queueRetryDelayMs: number;
+  queueProcessMaxPasses: number;
 }
 
 interface CliFlags {
@@ -134,6 +142,9 @@ function withDefaultDeps(deps: Partial<CliDeps>): CliDeps {
     enqueuePendingPr: deps.enqueuePendingPr ?? enqueuePendingPr,
     processPendingPrJobs: deps.processPendingPrJobs ?? processPendingPrJobs,
     now: deps.now ?? (() => new Date()),
+    sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    queueRetryDelayMs: deps.queueRetryDelayMs ?? defaultQueueRetryDelayMs,
+    queueProcessMaxPasses: deps.queueProcessMaxPasses ?? defaultQueueProcessMaxPasses,
   };
 }
 
@@ -218,42 +229,85 @@ async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> 
 }
 
 async function runProcessQueue(deps: CliDeps): Promise<number> {
-  const originalQueue = deps.readPendingQueue(deps.queuePath);
-  const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
-  await deps.processPendingPrJobs({
-    queue: originalQueue,
-    now: deps.now(),
-    retryWindowMs: 30 * 60_000,
-    retentionMs: 24 * 60 * 60_000,
-    readRemoteHead: async () => undefined,
-    post: (job) => postPrtokensForCurrentRepo({
-      cwd: job.repoRoot,
-      dryRun: false,
-      json: false,
-      verbose: false,
-      stdout: deps.stdout,
-      stderr: deps.stderr,
-      readAllUsage: deps.readAllUsage,
-      resolvePullRequest: deps.resolvePullRequest,
-      ensureGhReady: deps.ensureGhReady,
-      upsertPrComment: deps.upsertPrComment,
-    }),
-    writeQueue: (queue) => {
-      const latestQueue = deps.readPendingQueue(deps.queuePath);
-      deps.writePendingQueue(deps.queuePath, mergeProcessedQueue(originalJobIds, queue, latestQueue));
-    },
-  });
+  const maxPasses = Math.max(1, deps.queueProcessMaxPasses);
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const now = deps.now();
+    const originalQueue = deps.readPendingQueue(deps.queuePath);
+    const originalJobIds = new Set(originalQueue.jobs.map((job) => job.id));
+    let queueAfterPass: PendingPrQueue | undefined;
+
+    await deps.processPendingPrJobs({
+      queue: originalQueue,
+      now,
+      retryWindowMs: queueRetryWindowMs,
+      retentionMs: queueRetentionMs,
+      readRemoteHead: async () => undefined,
+      post: (job) => postPrtokensForCurrentRepo({
+        cwd: job.repoRoot,
+        dryRun: false,
+        json: false,
+        verbose: false,
+        stdout: deps.stdout,
+        stderr: deps.stderr,
+        readAllUsage: deps.readAllUsage,
+        resolvePullRequest: deps.resolvePullRequest,
+        ensureGhReady: deps.ensureGhReady,
+        upsertPrComment: deps.upsertPrComment,
+      }),
+      writeQueue: (queue) => {
+        const latestQueue = deps.readPendingQueue(deps.queuePath);
+        queueAfterPass = mergeProcessedQueue(originalJobIds, queue, latestQueue);
+        deps.writePendingQueue(deps.queuePath, queueAfterPass);
+      },
+    });
+
+    if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now, originalJobIds)) {
+      break;
+    }
+    await deps.sleep(deps.queueRetryDelayMs);
+  }
   return 0;
 }
 
 function mergeProcessedQueue(originalJobIds: Set<string>, processedQueue: PendingPrQueue, latestQueue: PendingPrQueue): PendingPrQueue {
+  const latestById = new Map(latestQueue.jobs.map((job) => [job.id, job]));
   return {
     version: 1,
     jobs: [
-      ...processedQueue.jobs.filter((job) => originalJobIds.has(job.id)),
+      ...processedQueue.jobs
+        .filter((job) => originalJobIds.has(job.id))
+        .map((job) => chooseMergedJob(job, latestById.get(job.id))),
       ...latestQueue.jobs.filter((job) => !originalJobIds.has(job.id)),
     ],
   };
+}
+
+function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date, retryableJobIds: Set<string>): boolean {
+  return queue.jobs.some((job) => retryableJobIds.has(job.id) && job.status === 'pending' && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs);
+}
+
+function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | undefined): PendingPrJob {
+  if (latestJob === undefined) return processedJob;
+  return isMoreAdvancedJob(latestJob, processedJob) ? latestJob : processedJob;
+}
+
+function isMoreAdvancedJob(candidate: PendingPrJob, baseline: PendingPrJob): boolean {
+  if (isTerminalStatus(candidate.status) && baseline.status === 'pending') return true;
+  if (candidate.attempts !== baseline.attempts) return candidate.attempts > baseline.attempts;
+
+  const candidateAttemptAt = parseTime(candidate.lastAttemptAt);
+  const baselineAttemptAt = parseTime(baseline.lastAttemptAt);
+  return candidateAttemptAt !== undefined && (baselineAttemptAt === undefined || candidateAttemptAt > baselineAttemptAt);
+}
+
+function isTerminalStatus(status: PendingPrJob['status']): boolean {
+  return status === 'completed' || status === 'blocked' || status === 'failed';
+}
+
+function parseTime(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : undefined;
 }
 
 function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => void): HookPushedRefFlags | undefined {
@@ -271,7 +325,7 @@ function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => vo
       },
     });
     const values = parsed.values;
-    if (values['remote-name'] && values['remote-url'] && values['local-branch'] && values['remote-branch'] && values['head-sha']) {
+    if (values['remote-name'] && values['local-branch'] && values['remote-branch'] && values['head-sha']) {
       return {
         remoteName: values['remote-name'],
         localBranch: values['local-branch'],
