@@ -103,6 +103,7 @@ describe('installGlobalPrePushHook', () => {
     );
     expect(hookContent).not.toContain('[ "${local_ref#refs/heads/}" != "$local_ref" ]');
     expect(hookContent).toContain('"$prtokens_bin" __hook-pushed-ref');
+    expect(hookContent).toContain("trap '' HUP");
     expect(hookContent.indexOf('[ "${remote_ref#refs/heads/}" != "$remote_ref" ]')).toBeLessThan(
       hookContent.indexOf('"$prtokens_bin" __hook-pushed-ref'),
     );

@@ -412,6 +412,7 @@ function renderManagedBlock(pathPrefix: HookPathPrefix, includeFinalExit: boolea
   lines.push(
     `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(pathPrefix.prtokensBinPath)})"`,
     '(',
+    "  trap '' HUP",
     '  remote_name="$1"',
     '  zero_sha=0000000000000000000000000000000000000000',
     '  if [ -n "$stdin_file" ] && [ -r "$stdin_file" ]; then',
