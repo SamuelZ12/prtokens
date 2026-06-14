@@ -106,8 +106,9 @@ describe('renderPrComment', () => {
       },
     });
 
-    expect(body).toContain('Agents: `claude-code` ~$3.20');
-    expect(body).toContain('Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code` ~$3.20\n\n<details>');
+    expect(body).toContain('Agents: `claude-code`');
+    expect(body).not.toContain('Agents: `claude-code` ~$3.20');
+    expect(body).toContain('Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code`\n\n<details>');
   });
 
   it('preserves legacy author markers without agents metadata', () => {
