@@ -315,10 +315,8 @@ describe('runCli', () => {
     expect(deps.runGhPrCreate).toHaveBeenCalledWith(['--title', 'T', '--', '--body', 'B']);
   });
 
-  it('enqueues metadata when hook mode finds no PR', async () => {
-    const deps = createDeps({
-      resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
-    });
+  it('enqueues metadata from hook mode', async () => {
+    const deps = createDeps();
 
     await expect(runCli([
       '__hook-pushed-ref',
@@ -329,11 +327,7 @@ describe('runCli', () => {
       '--head-sha', 'abcdef1234567890',
     ], deps)).resolves.toBe(0);
 
-    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
-      cwd: '/repo',
-      branch: 'feature/prtokens',
-      headSha: 'abcdef1234567890',
-    });
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
     expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
       repoRoot: '/repo',
       remoteName: 'origin',
@@ -341,7 +335,31 @@ describe('runCli', () => {
       remoteBranch: 'feature/prtokens',
       headSha: 'abcdef1234567890',
       status: 'pending',
+      lastResult: 'queued from pre-push hook',
     }));
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues hook metadata without posting directly from the hook process', async () => {
+    const deps = createDeps();
+
+    await expect(runCli([
+      '__hook-pushed-ref',
+      '--remote-name', 'origin',
+      '--local-branch', 'feature/prtokens',
+      '--remote-branch', 'feature/prtokens',
+      '--head-sha', 'abcdef1234567890',
+    ], deps)).resolves.toBe(0);
+
+    expect(deps.enqueuePendingPr).toHaveBeenCalledWith('/state/prtokens/pending-prs.json', expect.objectContaining({
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      status: 'pending',
+    }));
+    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
     expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
   });
 

@@ -94,10 +94,13 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('status=$?');
     expect(hookContent).toContain('exit "$status"');
     expect(hookContent).toContain('rm -f "$stdin_file"');
-    expect(hookContent).toContain("command -v prtokens 2>/dev/null || echo '/usr/local/bin/prtokens'");
+    expect(hookContent).toContain("prtokens_bin='/usr/local/bin/prtokens'");
+    expect(hookContent).toContain('if [ ! -x "$prtokens_bin" ]; then');
+    expect(hookContent).toContain('prtokens_bin="$(command -v prtokens 2>/dev/null || printf');
     expect(hookContent).toContain('while read local_ref local_sha remote_ref remote_sha; do');
     expect(hookContent).toContain('done < "$stdin_file"');
-    expect(hookContent).toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
+    expect(hookContent).not.toContain('git ls-remote --exit-code "$remote_name" "$remote_ref"');
+    expect(hookContent).not.toContain(') >/dev/null 2>&1 &');
     expect(hookContent).toContain(
       'if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
     );
@@ -112,7 +115,6 @@ describe('installGlobalPrePushHook', () => {
     expect(hookContent).toContain('--local-branch "$local_branch"');
     expect(hookContent).toContain('--remote-branch "$remote_branch"');
     expect(hookContent).toContain('--head-sha "$local_sha"');
-    expect(hookContent).toContain(') >/dev/null 2>&1 &');
     expect(hookContent).toContain('exit 0');
     expect(chmods).toEqual([{ path: hookPath, mode: 0o755 }]);
     expect(commands).toEqual([
@@ -587,7 +589,8 @@ describe('installGlobalPrePushHook', () => {
       coreHooksPathAction: 'would-set',
     });
     expect(result.hookBody).toContain('# >>> prtokens >>>');
-    expect(result.hookBody).toContain("echo '/usr/local/bin/prtokens'");
+    expect(result.hookBody).toContain("prtokens_bin='/usr/local/bin/prtokens'");
+    expect(result.hookBody).toContain("printf '%s\\n' '/usr/local/bin/prtokens'");
     expect(result.hookBody).toContain('"$prtokens_bin" __hook-pushed-ref');
     expect(deps.fs.mkdirSync).not.toHaveBeenCalled();
     expect(deps.fs.writeFileSync).not.toHaveBeenCalled();
@@ -735,6 +738,83 @@ describe('installGlobalPrePushHook', () => {
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
       expect(readFileSync(marker, 'utf8')).toBe('ran\n');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('generated hook restores captured tool paths before invoking prtokens', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prtokens-hook-'));
+    try {
+      const repoDir = join(tempDir, 'repo');
+      const gitBinDir = join(tempDir, 'git-bin');
+      const prtokensBinDir = join(tempDir, 'prtokens-bin');
+      const toolBinDir = join(tempDir, 'tool-bin');
+      const globalHook = join(tempDir, 'global-pre-push');
+      const marker = join(tempDir, 'marker.txt');
+      const headSha = 'abcdef1234567890abcdef1234567890abcdef12';
+      mkdirSync(repoDir);
+      mkdirSync(gitBinDir);
+      mkdirSync(prtokensBinDir);
+      mkdirSync(toolBinDir);
+
+      const fakeGit = join(gitBinDir, 'git');
+      writeFileSync(fakeGit, `#!/bin/sh
+if [ "$1" = "rev-parse" ]; then
+  exit 1
+fi
+if [ "$1" = "ls-remote" ]; then
+  printf '%s\\trefs/heads/feature/hook-test\\n' ${shellQuote(headSha)}
+  exit 0
+fi
+exit 1
+`);
+      chmodSync(fakeGit, 0o755);
+
+      const fakeNode = join(toolBinDir, 'node');
+      writeFileSync(fakeNode, `#!/bin/sh
+script="$1"
+shift
+printf '%s\\n' "$*" >> ${shellQuote(marker)}
+`);
+      chmodSync(fakeNode, 0o755);
+
+      const fakeGh = join(toolBinDir, 'gh');
+      writeFileSync(fakeGh, '#!/bin/sh\nexit 0\n');
+      chmodSync(fakeGh, 0o755);
+
+      const fakePrtokens = join(prtokensBinDir, 'prtokens');
+      writeFileSync(fakePrtokens, '#!/usr/bin/env node\n');
+      chmodSync(fakePrtokens, 0o755);
+
+      const hooksDir = join(tempDir, 'hooks');
+      const { deps } = createDeps({
+        commands: {
+          [`git config --global core.hooksPath ${hooksDir}`]: { stdout: '', status: 0 },
+          'sh -c command -v node': { stdout: `${fakeNode}\n`, status: 0 },
+          'sh -c command -v gh': { stdout: `${fakeGh}\n`, status: 0 },
+        },
+        env: { PATH: toolBinDir },
+        prtokensBinPath: fakePrtokens,
+      });
+      writeFileSync(globalHook, installGlobalPrePushHook(deps).hookBody);
+      chmodSync(globalHook, 0o755);
+
+      const result = spawnSync(globalHook, ['origin', 'git@github.com:acme/repo.git'], {
+        cwd: repoDir,
+        env: { PATH: `${gitBinDir}:/bin:/usr/bin` },
+        input: `refs/heads/feature/hook-test ${headSha} refs/heads/feature/hook-test 0000000000000000000000000000000000000000\n`,
+        encoding: 'utf8',
+        timeout: 2000,
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      spawnSync('sh', ['-c', `for i in 1 2 3 4 5 6 7 8 9 10; do [ -f ${shellQuote(marker)} ] && exit 0; sleep 0.1; done; exit 1`], {
+        encoding: 'utf8',
+        timeout: 2000,
+      });
+      expect(readFileSync(marker, 'utf8')).toContain('__hook-pushed-ref --remote-name origin --local-branch feature/hook-test --remote-branch feature/hook-test --head-sha abcdef1234567890abcdef1234567890abcdef12');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

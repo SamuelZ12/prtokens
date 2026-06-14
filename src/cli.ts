@@ -276,43 +276,20 @@ async function runHookPushedRef(argv: string[], deps: CliDeps): Promise<number> 
   if (flags === undefined) return 0;
 
   try {
-    const result = await postPrtokensForCurrentRepo({
-      cwd: deps.cwd,
-      dryRun: false,
-      json: false,
-      verbose: false,
-      branch: flags.remoteBranch,
+    const queuedAt = deps.now().toISOString();
+    deps.enqueuePendingPr(deps.queuePath, {
+      id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
+      repoRoot: deps.cwd,
+      remoteName: flags.remoteName,
+      localBranch: flags.localBranch,
+      remoteBranch: flags.remoteBranch,
       headSha: flags.headSha,
-      stdout: deps.stdout,
-      stderr: deps.stderr,
-      readAllUsage: deps.readAllUsage,
-      resolvePullRequest: deps.resolvePullRequest,
-      ensureGhReady: deps.ensureGhReady,
-      upsertPrComment: deps.upsertPrComment,
+      queuedAt,
+      attempts: 0,
+      status: 'pending',
+      lastResult: 'queued from pre-push hook',
     });
-
-    if (result.kind === 'no-pr') {
-      const queuedAt = deps.now().toISOString();
-      deps.enqueuePendingPr(deps.queuePath, {
-        id: makePendingPrJobId({ repoRoot: deps.cwd, remoteBranch: flags.remoteBranch, headSha: flags.headSha }),
-        repoRoot: deps.cwd,
-        remoteName: flags.remoteName,
-        localBranch: flags.localBranch,
-        remoteBranch: flags.remoteBranch,
-        headSha: flags.headSha,
-        queuedAt,
-        attempts: 0,
-        status: 'pending',
-        lastResult: result.message,
-      });
-      await scheduleProcessQueue(deps);
-      return 0;
-    }
-
-    if (result.kind === 'gh-not-ready' || result.kind === 'post-failed') {
-      return 0;
-    }
-    printPostResult(result, deps.stdout, deps.stderr);
+    await scheduleProcessQueue(deps);
     return 0;
   } catch (error) {
     deps.stderr(error instanceof Error ? error.message : String(error));

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
 export interface CommandResult {
   stdout: string;
@@ -247,7 +247,7 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
       };
     }
   }
-  const { hookBody, hookAction } = mergeHookBody(currentHookBody, deps.prtokensBinPath);
+  const { hookBody, hookAction } = mergeHookBody(currentHookBody, hookPathPrefix(deps));
   const resultBase = {
     dryRun,
     hooksDir,
@@ -286,9 +286,9 @@ export function installGlobalPrePushHook(deps: HookInstallerDeps, options: Insta
   return { ok: true, ...resultBase };
 }
 
-function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: string): { hookBody: string; hookAction: HookAction } {
+function mergeHookBody(currentHookBody: string | undefined, pathPrefix: HookPathPrefix): { hookBody: string; hookAction: HookAction } {
   if (currentHookBody === undefined) {
-    const managedBlock = renderManagedBlock(prtokensBinPath, true, true);
+    const managedBlock = renderManagedBlock(pathPrefix, true, true);
 
     return { hookBody: `#!/bin/sh\n${managedBlock}\n`, hookAction: 'installed' };
   }
@@ -297,7 +297,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   if (managedBlockPattern.test(currentHookBody)) {
     const prefix = contentBeforeManagedBlock(currentHookBody) ?? '';
     const managedBlock = renderManagedBlock(
-      prtokensBinPath,
+      pathPrefix,
       trailingContentAfterManagedBlock(currentHookBody).trim() === '',
       !hasMeaningfulShellContent(prefix),
     );
@@ -310,7 +310,7 @@ function mergeHookBody(currentHookBody: string | undefined, prtokensBinPath: str
   }
 
   const separator = currentHookBody.endsWith('\n') ? '' : '\n';
-  const managedBlock = renderManagedBlock(prtokensBinPath, true, !hasMeaningfulShellContent(currentHookBody));
+  const managedBlock = renderManagedBlock(pathPrefix, true, !hasMeaningfulShellContent(currentHookBody));
 
   return {
     hookBody: `${currentHookBody}${separator}${managedBlock}\n`,
@@ -361,7 +361,12 @@ function hasMeaningfulShellContent(hookBody: string): boolean {
   });
 }
 
-function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, includeRepoLocalForwarding: boolean): string {
+interface HookPathPrefix {
+  prtokensBinPath: string;
+  pathPrefix: string;
+}
+
+function renderManagedBlock(pathPrefix: HookPathPrefix, includeFinalExit: boolean, includeRepoLocalForwarding: boolean): string {
   const lines = [
     managedStart,
     'prtokens_previous_status=$?',
@@ -369,6 +374,7 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
     '  exit "$prtokens_previous_status"',
     'fi',
     '# Installed by `prtokens init`. Re-run prtokens init to update this block.',
+    ...renderPathExportLines(pathPrefix.pathPrefix),
     'stdin_file="$(mktemp)" || exit 1',
     'if ! cat > "$stdin_file"; then',
     '  rm -f "$stdin_file"',
@@ -404,39 +410,26 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
   }
 
   lines.push(
-    `prtokens_bin="$(command -v prtokens 2>/dev/null || echo ${shellQuote(prtokensBinPath)})"`,
-    '(',
-    '  remote_name="$1"',
-    '  zero_sha=0000000000000000000000000000000000000000',
-    '  if [ -n "$stdin_file" ] && [ -r "$stdin_file" ]; then',
-    '    while read local_ref local_sha remote_ref remote_sha; do',
-    '      if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
-    '        attempts=0',
-    '        while [ "$attempts" -lt 30 ]; do',
-    '          seen_sha="$(git ls-remote --exit-code "$remote_name" "$remote_ref" 2>/dev/null | while read sha ref; do',
-    '            if [ "$ref" = "$remote_ref" ]; then',
-    '              printf \'%s\\n\' "$sha"',
-    '              break',
-    '            fi',
-    '          done)"',
-    '          if [ "$seen_sha" = "$local_sha" ]; then',
-    '            break',
-    '          fi',
-    '          attempts=$((attempts + 1))',
-    '          sleep 1',
-    '        done',
-    '        local_branch="${local_ref#refs/heads/}"',
-    '        remote_branch="${remote_ref#refs/heads/}"',
-    '        "$prtokens_bin" __hook-pushed-ref \\',
-    '          --remote-name "$remote_name" \\',
-    '          --local-branch "$local_branch" \\',
-    '          --remote-branch "$remote_branch" \\',
-    '          --head-sha "$local_sha" >/dev/null 2>&1 </dev/null',
-    '      fi',
-    '    done < "$stdin_file"',
-    '    rm -f "$stdin_file"',
-    '  fi',
-    ') >/dev/null 2>&1 &',
+    `prtokens_bin=${shellQuote(pathPrefix.prtokensBinPath)}`,
+    'if [ ! -x "$prtokens_bin" ]; then',
+    `  prtokens_bin="$(command -v prtokens 2>/dev/null || printf '%s\\n' ${shellQuote(pathPrefix.prtokensBinPath)})"`,
+    'fi',
+    'remote_name="$1"',
+    'zero_sha=0000000000000000000000000000000000000000',
+    'if [ -n "$stdin_file" ] && [ -r "$stdin_file" ]; then',
+    '  while read local_ref local_sha remote_ref remote_sha; do',
+    '    if [ -n "$remote_name" ] && [ -n "$local_sha" ] && [ "${remote_ref#refs/heads/}" != "$remote_ref" ] && [ "$local_sha" != "$zero_sha" ]; then',
+    '      local_branch="${local_ref#refs/heads/}"',
+    '      remote_branch="${remote_ref#refs/heads/}"',
+    '      "$prtokens_bin" __hook-pushed-ref \\',
+    '        --remote-name "$remote_name" \\',
+    '        --local-branch "$local_branch" \\',
+    '        --remote-branch "$remote_branch" \\',
+    '        --head-sha "$local_sha" >/dev/null 2>&1 </dev/null || true',
+    '    fi',
+    '  done < "$stdin_file"',
+    '  rm -f "$stdin_file"',
+    'fi',
   );
 
   if (includeFinalExit) {
@@ -446,6 +439,45 @@ function renderManagedBlock(prtokensBinPath: string, includeFinalExit: boolean, 
   lines.push(managedEnd);
 
   return lines.join('\n');
+}
+
+function renderPathExportLines(pathPrefix: string): string[] {
+  if (pathPrefix === '') return [];
+
+  return [
+    `PATH=${shellQuote(pathPrefix)}\${PATH:+":$PATH"}`,
+    'export PATH',
+    '',
+  ];
+}
+
+function hookPathPrefix(deps: HookInstallerDeps): HookPathPrefix {
+  const entries = [
+    dirname(deps.prtokensBinPath),
+    commandDir(deps, 'node'),
+    commandDir(deps, 'gh'),
+  ];
+
+  return {
+    prtokensBinPath: deps.prtokensBinPath,
+    pathPrefix: uniqueStrings(entries)
+      .filter((entry) => entry !== '' && isAbsolute(entry))
+      .join(':'),
+  };
+}
+
+function commandDir(deps: HookInstallerDeps, command: string): string {
+  if ((deps.env.PATH ?? '') === '') return '';
+
+  const result = runCommandSafely(deps, 'sh', ['-c', `command -v ${command}`]);
+  if (result.status !== 0) return '';
+
+  const commandPath = result.stdout.trim().split('\n')[0] ?? '';
+  return commandPath === '' ? '' : dirname(commandPath);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function trailingContentAfterManagedBlock(hookBody: string): string {
