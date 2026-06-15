@@ -193,6 +193,10 @@ function runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Pro
     child.on('close', (code) => {
       if (code !== 0) {
         const details = stderr.trim();
+        if (code === 2 && details.length === 0) {
+          resolve(undefined);
+          return;
+        }
         reject(new Error(`git ls-remote failed for ${remoteRef} on ${remoteName}${details.length > 0 ? `: ${details}` : ` with exit code ${code ?? 'unknown'}`}`));
         return;
       }

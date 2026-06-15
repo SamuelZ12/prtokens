@@ -802,6 +802,42 @@ describe('runCli', () => {
     }
   });
 
+  it('treats a missing default remote head as unavailable instead of failed', async () => {
+    vi.resetModules();
+    const spawn = vi.fn(() => createSpawnChild({ code: 2 }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const job = {
+        id: 'job-remote-head',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: '1234567890abcdef',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+        lastResult: 'waiting for PR',
+      };
+      const deps = createDeps({
+        runGitLsRemote: undefined,
+        readPendingQueue: vi.fn().mockReturnValue({ version: 1, jobs: [] }),
+        processPendingPrJobs: vi.fn(async (options) => {
+          await expect(options.readRemoteHead(job)).resolves.toBeUndefined();
+        }),
+      });
+
+      await expect(runCliWithMockedSpawn(['__process-queue'], deps)).resolves.toBe(0);
+
+      expect(spawn).toHaveBeenCalledWith('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/feature/prtokens'], { cwd: '/repo', stdio: ['ignore', 'pipe', 'pipe'] });
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
+  });
+
   it('fails closed when default remote head command returns no SHA', async () => {
     vi.resetModules();
     const spawn = vi.fn(() => createSpawnChild({ code: 0 }));
