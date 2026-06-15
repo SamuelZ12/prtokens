@@ -1,6 +1,8 @@
 import type { PostPrtokensResult } from './pr-posting.js';
 import { pruneQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 
+export const remoteHeadNotReachedResult = 'remote has not reached pushed head yet';
+
 export interface ProcessPendingPrJobsOptions {
   queue: PendingPrQueue;
   now: Date;
@@ -41,7 +43,7 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
         attempts: job.attempts + 1,
         status: 'pending',
         lastAttemptAt: options.now.toISOString(),
-        lastResult: 'remote has not reached pushed head yet',
+        lastResult: remoteHeadNotReachedResult,
       });
       continue;
     }

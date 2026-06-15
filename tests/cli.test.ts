@@ -888,6 +888,120 @@ describe('runCli', () => {
     });
   });
 
+  it('retries stale remote-head process-queue jobs before the normal retry delay', async () => {
+    const normalRetryDelayMs = 30_000;
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending' as const,
+      lastResult: 'waiting for remote head',
+    };
+    const staleRemoteAfterFirstPass = {
+      ...originalJob,
+      attempts: 1,
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'remote has not reached pushed head yet',
+    };
+    const completedAfterSecondPass = {
+      ...staleRemoteAfterFirstPass,
+      attempts: 2,
+      status: 'completed' as const,
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      queueRetryDelayMs: normalRetryDelayMs,
+      queueProcessMaxPasses: 3,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [staleRemoteAfterFirstPass] })
+        .mockReturnValueOnce({ version: 1, jobs: [staleRemoteAfterFirstPass] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        if (options.queue.jobs[0]?.attempts === 0) {
+          options.writeQueue({ version: 1, jobs: [staleRemoteAfterFirstPass] });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedAfterSecondPass] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(2);
+    const sleepMs = deps.sleep.mock.calls[0]?.[0];
+    expect(sleepMs).toBeGreaterThan(0);
+    expect(sleepMs).toBeLessThan(normalRetryDelayMs);
+    expect(deps.writePendingQueue).toHaveBeenLastCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [completedAfterSecondPass],
+    });
+  });
+
+  it('keeps stale remote-head process-queue jobs alive beyond the old normal-delay pass cap', async () => {
+    let passCount = 0;
+    let queue = {
+      version: 1 as const,
+      jobs: [{
+        id: 'job-original',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: 'abcdef1234567890',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending' as const,
+        lastResult: 'waiting for remote head',
+      }],
+    };
+    const completedJob = {
+      ...queue.jobs[0],
+      attempts: 61,
+      status: 'completed' as const,
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      queueProcessMaxPasses: undefined,
+      readPendingQueue: vi.fn(() => queue),
+      writePendingQueue: vi.fn((_path, nextQueue) => { queue = nextQueue; }),
+      mergePendingQueue: vi.fn((_path, mergeFn) => {
+        queue = mergeFn(queue);
+        return queue;
+      }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        passCount += 1;
+        if (passCount <= 60) {
+          options.writeQueue({
+            version: 1,
+            jobs: [{
+              ...queue.jobs[0],
+              attempts: passCount,
+              lastAttemptAt: '2026-06-14T00:00:00.000Z',
+              lastResult: 'remote has not reached pushed head yet',
+            }],
+          });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedJob] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(61);
+    expect(queue).toEqual({
+      version: 1,
+      jobs: [completedJob],
+    });
+  });
+
   it('keeps a more advanced concurrent same-ID queue update', async () => {
     const originalJob = {
       id: 'job-original',
