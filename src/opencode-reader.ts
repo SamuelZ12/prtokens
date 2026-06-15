@@ -109,10 +109,11 @@ function readDatabase(
     diagnostics.malformedLineCount += malformedCount;
     diagnostics.skippedLineCount += malformedCount;
     const rows = readUsageRows(db, repoRoots);
+    const parentSessionIds = readSessionParentIds(db);
     const events: UsageEvent[] = [];
 
     for (const row of rows) {
-      const event = rowToUsageEvent(row);
+      const event = rowToUsageEvent(row, parentSessionIds);
       if (!event) {
         diagnostics.skippedLineCount += 1;
         continue;
@@ -158,11 +159,32 @@ function readUsageRows(db: DatabaseLike, repoRoots: string[]): Record<string, un
     .all(...repoRoots);
 }
 
+function readSessionParentIds(db: DatabaseLike): Map<string, string | undefined> {
+  try {
+    const rows = db.prepare('SELECT id, parent_id AS parentId FROM session').all();
+    const parents = new Map<string, string | undefined>();
+    for (const row of rows) {
+      const id = getString(row.id);
+      if (!id) {
+        continue;
+      }
+      parents.set(id, getString(row.parentId));
+    }
+    return parents;
+  } catch (error) {
+    const message = errorMessage(error).toLowerCase();
+    if (message.includes('no such table') || (message.includes('no such column') && message.includes('parent_id'))) {
+      return new Map();
+    }
+    throw error;
+  }
+}
+
 function uniqueRepoRoots(repoRoots: string[]): string[] {
   return [...new Set(repoRoots.map((repoRoot) => path.resolve(repoRoot)))];
 }
 
-function rowToUsageEvent(row: Record<string, unknown>): UsageEvent | undefined {
+function rowToUsageEvent(row: Record<string, unknown>, parentSessionIds: Map<string, string | undefined>): UsageEvent | undefined {
   const id = getString(row.id);
   const sessionId = getString(row.sessionId);
   if (!id || !sessionId) {
@@ -178,8 +200,30 @@ function rowToUsageEvent(row: Record<string, unknown>): UsageEvent | undefined {
     outputTokens: (getNumber(row.outputTokens) ?? 0) + (getNumber(row.reasoningTokens) ?? 0),
     cacheWriteTokens: getNumber(row.cacheWriteTokens) ?? 0,
     cacheReadTokens: getNumber(row.cacheReadTokens) ?? 0,
-    sessionId,
+    sessionId: rootSessionId(sessionId, parentSessionIds),
   };
+}
+
+function rootSessionId(sessionId: string, parentSessionIds: Map<string, string | undefined>): string {
+  let current = sessionId;
+  const visited = new Set<string>();
+
+  while (true) {
+    if (visited.has(current)) {
+      return sessionId;
+    }
+    visited.add(current);
+
+    const parent = parentSessionIds.get(current);
+    if (parent === undefined) {
+      return parentSessionIds.has(current) ? current : sessionId;
+    }
+    if (!parentSessionIds.has(parent)) {
+      return sessionId;
+    }
+
+    current = parent;
+  }
 }
 
 function toIsoTimestamp(epochMs: number | undefined): string {

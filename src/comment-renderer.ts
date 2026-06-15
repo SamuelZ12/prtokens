@@ -228,6 +228,7 @@ function renderCurrentAuthorSection(author: RenderAuthorInput, summary: AuthorSu
     '',
     renderModels(summary.models),
     ...renderAgents(summary.agents),
+    ...renderSessionNotes(summary.agents),
     '',
     '<details>',
     '<summary>Commit breakdown</summary>',
@@ -271,6 +272,11 @@ function renderAgents(agents: RenderAgentInput[] | undefined): string[] {
   const sortedAgents = [...agents].sort((left, right) => right.costUsd - left.costUsd);
   if (sortedAgents.length === 1) return [`Agent: \`${sortedAgents[0].agent}\``];
   return [`Agents: ${sortedAgents.map((agent) => `\`${agent.agent}\` ${formatCost(agent.costUsd)}`).join(' · ')}`];
+}
+
+function renderSessionNotes(agents: RenderAgentInput[] | undefined): string[] {
+  if (agents === undefined || !agents.some((agent) => agent.agent === 'opencode')) return [];
+  return ['_OpenCode child sessions are grouped by parent session._'];
 }
 
 function formatCost(costUsd: number): string {

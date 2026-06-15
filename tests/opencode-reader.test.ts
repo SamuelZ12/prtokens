@@ -106,6 +106,121 @@ describe('readOpencodeUsage', () => {
     expect(result.events[0]).toMatchObject({ id: 'opencode-db:alias-1', inputTokens: 10, outputTokens: 2, sessionId: 's1' });
   });
 
+  it('groups child and nested OpenCode sessions under their root session', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const dataDir = await createOpencodeDataDir(homeDir);
+    await createMessageDatabase(
+      join(dataDir, 'opencode.db'),
+      [
+        messageRow('root-message', 'root-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:00:00.000Z') },
+          tokens: { input: 10, output: 1 },
+        }),
+        messageRow('child-message', 'child-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:01:00.000Z') },
+          tokens: { input: 20, output: 2 },
+        }),
+        messageRow('nested-child-message', 'nested-child-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:02:00.000Z') },
+          tokens: { input: 30, output: 3 },
+        }),
+      ],
+      [
+        sessionRow('root-session'),
+        sessionRow('child-session', 'root-session'),
+        sessionRow('nested-child-session', 'child-session'),
+      ],
+    );
+
+    const result = await readOpencodeUsage({ repoRoot, homeDir, sqliteLoader: loadSqliteFixture });
+
+    expect(result.events.map((event) => event.sessionId)).toEqual(['root-session', 'root-session', 'root-session']);
+  });
+
+  it('keeps the raw session id when OpenCode parent session metadata is missing', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const dataDir = await createOpencodeDataDir(homeDir);
+    await createMessageDatabase(
+      join(dataDir, 'opencode.db'),
+      [
+        messageRow('orphan-message', 'orphan-child-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:00:00.000Z') },
+          tokens: { input: 10, output: 1 },
+        }),
+      ],
+      [sessionRow('orphan-child-session', 'missing-parent-session')],
+    );
+
+    const result = await readOpencodeUsage({ repoRoot, homeDir, sqliteLoader: loadSqliteFixture });
+
+    expect(result.events[0]).toMatchObject({ sessionId: 'orphan-child-session' });
+  });
+
+  it('keeps usage when the OpenCode session table has no parent_id column', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const dataDir = await createOpencodeDataDir(homeDir);
+    await createMessageDatabaseWithoutSessionParentId(join(dataDir, 'opencode.db'), [
+      messageRow('old-schema-message', 'raw-session', {
+        role: 'assistant',
+        path: { root: repoRoot },
+        modelID: 'gpt-5.5-fast',
+        time: { completed: Date.parse('2024-06-12T11:00:00.000Z') },
+        tokens: { input: 10, output: 1 },
+      }),
+    ]);
+
+    const result = await readOpencodeUsage({ repoRoot, homeDir, sqliteLoader: loadSqliteFixture });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({ id: 'opencode-db:old-schema-message', sessionId: 'raw-session' });
+    expect(result.diagnostics.warningMessages).toEqual([]);
+  });
+
+  it('keeps raw session ids when OpenCode parent session metadata is cyclic', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/me/repo';
+    const dataDir = await createOpencodeDataDir(homeDir);
+    await createMessageDatabase(
+      join(dataDir, 'opencode.db'),
+      [
+        messageRow('a-message', 'a-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:00:00.000Z') },
+          tokens: { input: 10, output: 1 },
+        }),
+        messageRow('b-message', 'b-session', {
+          role: 'assistant',
+          path: { root: repoRoot },
+          modelID: 'gpt-5.5-fast',
+          time: { completed: Date.parse('2024-06-12T11:01:00.000Z') },
+          tokens: { input: 20, output: 2 },
+        }),
+      ],
+      [sessionRow('a-session', 'b-session'), sessionRow('b-session', 'a-session')],
+    );
+
+    const result = await readOpencodeUsage({ repoRoot, homeDir, sqliteLoader: loadSqliteFixture });
+
+    expect(result.events.map((event) => event.sessionId)).toEqual(['a-session', 'b-session']);
+  });
+
   it('dedupes migrated messages across sibling databases', async () => {
     const homeDir = await createTempDir();
     const repoRoot = '/Users/me/repo';
@@ -192,16 +307,38 @@ interface MessageRow {
   data: string;
 }
 
+interface SessionRow {
+  id: string;
+  parentId?: string;
+}
+
 async function createOpencodeDataDir(homeDir: string): Promise<string> {
   const dataDir = join(homeDir, '.local', 'share', 'opencode');
   await mkdir(dataDir, { recursive: true });
   return dataDir;
 }
 
-async function createMessageDatabase(dbFile: string, rows: MessageRow[]): Promise<void> {
+async function createMessageDatabase(dbFile: string, rows: MessageRow[], sessions: SessionRow[] = []): Promise<void> {
   const { DatabaseSync } = await loadSqliteFixture();
   const db = new DatabaseSync(dbFile);
   db.exec('CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER, data TEXT NOT NULL)');
+  db.exec('CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT)');
+  const insert = db.prepare('INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)');
+  for (const row of rows) {
+    insert.run(row.id, row.sessionId, 0, row.data);
+  }
+  const insertSession = db.prepare('INSERT INTO session (id, parent_id) VALUES (?, ?)');
+  for (const session of sessions) {
+    insertSession.run(session.id, session.parentId ?? null);
+  }
+  db.close();
+}
+
+async function createMessageDatabaseWithoutSessionParentId(dbFile: string, rows: MessageRow[]): Promise<void> {
+  const { DatabaseSync } = await loadSqliteFixture();
+  const db = new DatabaseSync(dbFile);
+  db.exec('CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER, data TEXT NOT NULL)');
+  db.exec('CREATE TABLE session (id TEXT PRIMARY KEY)');
   const insert = db.prepare('INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)');
   for (const row of rows) {
     insert.run(row.id, row.sessionId, 0, row.data);
@@ -211,6 +348,10 @@ async function createMessageDatabase(dbFile: string, rows: MessageRow[]): Promis
 
 function messageRow(id: string, sessionId: string, data: Record<string, unknown>): MessageRow {
   return { id, sessionId, data: JSON.stringify(data) };
+}
+
+function sessionRow(id: string, parentId?: string): SessionRow {
+  return { id, parentId };
 }
 
 async function loadSqliteFixture(): Promise<SqliteFixtureModule> {

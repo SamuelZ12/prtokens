@@ -93,9 +93,20 @@ describe('renderPrComment', () => {
 
     expect(body).toContain('Agents: `claude-code` ~$3.20 · `codex` ~$1.10 · `opencode` ~$0.45');
     expect(body).toContain(
-      'Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code` ~$3.20 · `codex` ~$1.10 · `opencode` ~$0.45\n\n<details>',
+      'Models: `claude-sonnet-4-6`, `claude-opus-4-8`\nAgents: `claude-code` ~$3.20 · `codex` ~$1.10 · `opencode` ~$0.45\n_OpenCode child sessions are grouped by parent session._\n\n<details>',
     );
     expect(JSON.parse(authorMarkerPayload(body, 'samuel')).agents).toEqual(agents);
+  });
+
+  it('explains that OpenCode child sessions are grouped by parent session', () => {
+    const body = renderPrComment({
+      currentAuthor: {
+        ...currentAuthor,
+        agents: [{ agent: 'opencode', costUsd: 3.2, inputTokens: 100, outputTokens: 10, sessionCount: 1 }],
+      },
+    });
+
+    expect(body).toContain('_OpenCode child sessions are grouped by parent session._');
   });
 
   it('renders singular labels for one model and one agent', () => {

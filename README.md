@@ -18,6 +18,8 @@ prtokens finds the open PR, reads your local transcripts, and posts or updates t
 
 A single comment showing total estimated cost, token and session counts, models used, agent costs, and a collapsible per-commit table. The same comment is updated in place on later runs; multiple contributors each get their own labeled section.
 
+`Sessions` counts top-level coding-agent sessions. For OpenCode, child/subagent sessions are grouped under their parent session.
+
 *Example (commit table collapsed by default):*
 
 ---
