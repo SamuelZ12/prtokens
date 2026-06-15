@@ -415,10 +415,9 @@ function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => vo
 
 async function scheduleProcessQueue(deps: CliDeps): Promise<void> {
   try {
-    if (deps.processPendingPrJobs === processPendingPrJobs) {
+    await runProcessQueue({ ...deps, queueProcessMaxPasses: 1 });
+    if (hasRetryablePendingJobs(deps.readPendingQueue(deps.queuePath), deps.now())) {
       spawnDetachedProcessQueue();
-    } else {
-      await runProcessQueue(deps);
     }
   } catch (error) {
     deps.stderr(error instanceof Error ? error.message : String(error));

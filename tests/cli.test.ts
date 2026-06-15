@@ -340,8 +340,36 @@ describe('runCli', () => {
     expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
   });
 
-  it('queues hook metadata without posting directly from the hook process', async () => {
-    const deps = createDeps();
+  it('processes hook metadata immediately in the hook process', async () => {
+    const queuedJob = {
+      id: 'repo-feature-prtokens-abcdef123456',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending' as const,
+      lastResult: 'queued from pre-push hook',
+    };
+    const completedJob = {
+      ...queuedJob,
+      attempts: 1,
+      status: 'completed' as const,
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [queuedJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [completedJob] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        await options.post(queuedJob);
+        options.writeQueue({ version: 1, jobs: [completedJob] });
+      }),
+    });
 
     await expect(runCli([
       '__hook-pushed-ref',
@@ -358,9 +386,128 @@ describe('runCli', () => {
       headSha: 'abcdef1234567890',
       status: 'pending',
     }));
-    expect(deps.resolvePullRequest).not.toHaveBeenCalled();
-    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+    expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+      cwd: '/repo',
+      branch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+    });
+    expect(deps.upsertPrComment).toHaveBeenCalledTimes(1);
     expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not spawn a detached queue worker when immediate hook processing completes the job', async () => {
+    vi.resetModules();
+    const detachedChild = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    const spawn = vi.fn((cmd: string) => cmd === process.execPath
+      ? detachedChild
+      : createSpawnChild({ stdout: 'abcdef1234567890\trefs/heads/feature/prtokens\n' }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const queuedJob = {
+        id: 'repo-feature-prtokens-abcdef123456',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: 'abcdef1234567890',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending' as const,
+        lastResult: 'queued from pre-push hook',
+      };
+      const completedJob = {
+        ...queuedJob,
+        attempts: 1,
+        status: 'completed' as const,
+        lastAttemptAt: '2026-06-14T00:00:00.000Z',
+        lastResult: 'posted PR #42',
+      };
+      const deps = createDeps({
+        processPendingPrJobs: undefined,
+        readPendingQueue: vi.fn()
+          .mockReturnValueOnce({ version: 1, jobs: [queuedJob] })
+          .mockReturnValueOnce({ version: 1, jobs: [completedJob] })
+          .mockReturnValueOnce({ version: 1, jobs: [completedJob] }),
+        resolvePullRequest: vi.fn().mockResolvedValue(okPr()),
+        upsertPrComment: vi.fn().mockResolvedValue({ ok: true }),
+      });
+
+      await expect(runCliWithMockedSpawn([
+        '__hook-pushed-ref',
+        '--remote-name', 'origin',
+        '--local-branch', 'feature/prtokens',
+        '--remote-branch', 'feature/prtokens',
+        '--head-sha', 'abcdef1234567890',
+      ], deps)).resolves.toBe(0);
+
+      expect(deps.resolvePullRequest).toHaveBeenCalledWith({
+        cwd: '/repo',
+        branch: 'feature/prtokens',
+        headSha: 'abcdef1234567890',
+      });
+      expect(spawn.mock.calls.filter(([cmd]) => cmd === process.execPath)).toHaveLength(0);
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
+  });
+
+  it('spawns a detached queue worker when immediate hook processing leaves a retryable pending job', async () => {
+    vi.resetModules();
+    const detachedChild = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    const spawn = vi.fn((cmd: string) => cmd === process.execPath
+      ? detachedChild
+      : createSpawnChild({ stdout: 'abcdef1234567890\trefs/heads/feature/prtokens\n' }));
+    vi.doMock('node:child_process', () => ({ spawn }));
+
+    try {
+      const { runCli: runCliWithMockedSpawn } = await import('../src/cli.js');
+      const queuedJob = {
+        id: 'repo-feature-prtokens-abcdef123456',
+        repoRoot: '/repo',
+        remoteName: 'origin',
+        localBranch: 'feature/prtokens',
+        remoteBranch: 'feature/prtokens',
+        headSha: 'abcdef1234567890',
+        queuedAt: '2026-06-14T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending' as const,
+        lastResult: 'queued from pre-push hook',
+      };
+      const pendingJob = {
+        ...queuedJob,
+        attempts: 1,
+        lastAttemptAt: '2026-06-14T00:00:00.000Z',
+        lastResult: 'No pull request found for current branch.',
+      };
+      const deps = createDeps({
+        processPendingPrJobs: undefined,
+        readPendingQueue: vi.fn()
+          .mockReturnValueOnce({ version: 1, jobs: [queuedJob] })
+          .mockReturnValueOnce({ version: 1, jobs: [pendingJob] })
+          .mockReturnValueOnce({ version: 1, jobs: [pendingJob] }),
+        resolvePullRequest: vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' }),
+      });
+
+      await expect(runCliWithMockedSpawn([
+        '__hook-pushed-ref',
+        '--remote-name', 'origin',
+        '--local-branch', 'feature/prtokens',
+        '--remote-branch', 'feature/prtokens',
+        '--head-sha', 'abcdef1234567890',
+      ], deps)).resolves.toBe(0);
+
+      expect(spawn).toHaveBeenCalledWith(process.execPath, [expect.any(String), '__process-queue'], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      expect(detachedChild.unref).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.resetModules();
+    }
   });
 
   it('does not fail pushes when hook metadata parsing fails', async () => {
