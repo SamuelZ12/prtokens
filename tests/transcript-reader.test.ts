@@ -214,4 +214,40 @@ describe('readClaudeTranscripts', () => {
     expect(result.events.filter((event) => event.inputTokens === 50)).toHaveLength(1);
     expect(result.diagnostics.dedupedEventCount).toBe(1);
   });
+
+  it('groups nested Claude Code subagent usage under the parent session', async () => {
+    const homeDir = await createTempDir();
+    const repoRoot = '/Users/samuelzhang/Documents/GitHub/prtokens';
+    const normalizedRepo = repoRoot.replaceAll('/', '-');
+    const projectDir = join(homeDir, '.claude', 'projects', normalizedRepo);
+    await mkdir(projectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'session.jsonl'),
+      JSON.stringify({
+        sessionId: 'parent-session',
+        timestamp: '2026-06-12T10:00:00.000Z',
+        message: {
+          id: 'parent-message',
+          model: 'claude-sonnet-4-6',
+          subagents: [
+            {
+              sessionId: 'child-session',
+              requestId: 'child-request',
+              message: {
+                id: 'child-message',
+                model: 'claude-sonnet-4-6',
+                usage: { input_tokens: 50, output_tokens: 5 },
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await readClaudeTranscripts({ repoRoot, homeDir });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({ sessionId: 'parent-session', inputTokens: 50, outputTokens: 5 });
+  });
 });

@@ -179,7 +179,7 @@ function collectNestedUsageCandidates(
               candidates.push(candidate);
             }
           }
-          collectNestedUsageCandidates(item, mergeContext(parentContext, item), filePath, lineNumber, nestedPath, candidates);
+          collectNestedUsageCandidates(item, mergeNestedContext(parentContext, item), filePath, lineNumber, nestedPath, candidates);
         }
       });
     } else if (isObject(child)) {
@@ -230,10 +230,18 @@ function createUsageCandidate(
         ? {}
         : { cacheWrite1hTokens: tokenTotals.cacheWrite1hTokens }),
       cacheReadTokens: tokenTotals.cacheReadTokens,
-      sessionId: context.sessionId ?? '',
+      sessionId: nestedPath.length > 0 ? (parentContext.sessionId ?? context.sessionId ?? '') : (context.sessionId ?? ''),
       ...(sourceCostUsd === undefined ? {} : { sourceCostUsd }),
       gitBranch: context.gitBranch,
     },
+  };
+}
+
+function mergeNestedContext(parentContext: ParentContext, source: JsonObject): ParentContext {
+  const context = mergeContext(parentContext, source);
+  return {
+    ...context,
+    sessionId: parentContext.sessionId ?? context.sessionId,
   };
 }
 
