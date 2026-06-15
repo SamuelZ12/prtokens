@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.5 - 2026-06-15
+
+### Fixed
+
+- Group OpenCode child sessions under parent sessions when reporting PR session counts.
+- Group Claude Code nested subagent usage under the parent session when reporting PR session counts.
+
 ## 0.4.4 - 2026-06-14
 
 ### Fixed
