@@ -19,7 +19,7 @@ import {
 } from './hook-installer.js';
 import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, scrubPendingQueue, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 import { processPendingPrJobs, remoteHeadNotReachedResult } from './pending-pr-worker.js';
-import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo, prMetadataNotReachedHeadMessage, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
 
 const queueRetryWindowMs = 30 * 60_000;
@@ -364,12 +364,12 @@ function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date): boolean {
 }
 
 function queueRetryDelayMsFor(queue: PendingPrQueue, now: Date, normalRetryDelayMs: number): number {
-  const hasStaleRemoteHeadJob = queue.jobs.some((job) => (
+  const hasPushedHeadNotReadyJob = queue.jobs.some((job) => (
     job.status === 'pending'
-    && job.lastResult === remoteHeadNotReachedResult
+    && (job.lastResult === remoteHeadNotReachedResult || job.lastResult === prMetadataNotReachedHeadMessage)
     && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs
   ));
-  return hasStaleRemoteHeadJob ? Math.min(staleRemoteHeadQueueRetryDelayMs, normalRetryDelayMs) : normalRetryDelayMs;
+  return hasPushedHeadNotReadyJob ? Math.min(staleRemoteHeadQueueRetryDelayMs, normalRetryDelayMs) : normalRetryDelayMs;
 }
 
 function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | undefined): PendingPrJob {

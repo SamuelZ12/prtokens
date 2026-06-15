@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { isEntrypoint, runCli } from '../src/cli.js';
 import { renderPrComment } from '../src/comment-renderer.js';
-import { ghSetupMessage, postPrtokensForCurrentRepo } from '../src/pr-posting.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo, prMetadataNotReachedHeadMessage } from '../src/pr-posting.js';
 
 function usageEvent(overrides = {}) {
   return {
@@ -961,6 +961,61 @@ describe('runCli', () => {
       processPendingPrJobs: vi.fn(async (options) => {
         if (options.queue.jobs[0]?.attempts === 0) {
           options.writeQueue({ version: 1, jobs: [staleRemoteAfterFirstPass] });
+          return;
+        }
+        options.writeQueue({ version: 1, jobs: [completedAfterSecondPass] });
+      }),
+    });
+
+    await expect(runCli(['__process-queue'], deps)).resolves.toBe(0);
+
+    expect(deps.processPendingPrJobs).toHaveBeenCalledTimes(2);
+    const sleepMs = deps.sleep.mock.calls[0]?.[0];
+    expect(sleepMs).toBeGreaterThan(0);
+    expect(sleepMs).toBeLessThan(normalRetryDelayMs);
+    expect(deps.writePendingQueue).toHaveBeenLastCalledWith('/state/prtokens/pending-prs.json', {
+      version: 1,
+      jobs: [completedAfterSecondPass],
+    });
+  });
+
+  it('retries stale PR metadata process-queue jobs before the normal retry delay', async () => {
+    const normalRetryDelayMs = 30_000;
+    const originalJob = {
+      id: 'job-original',
+      repoRoot: '/repo',
+      remoteName: 'origin',
+      localBranch: 'feature/prtokens',
+      remoteBranch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      queuedAt: '2026-06-14T00:00:00.000Z',
+      attempts: 0,
+      status: 'pending' as const,
+      lastResult: 'waiting for PR metadata',
+    };
+    const stalePrMetadataAfterFirstPass = {
+      ...originalJob,
+      attempts: 1,
+      lastAttemptAt: '2026-06-14T00:00:00.000Z',
+      lastResult: prMetadataNotReachedHeadMessage,
+    };
+    const completedAfterSecondPass = {
+      ...stalePrMetadataAfterFirstPass,
+      attempts: 2,
+      status: 'completed' as const,
+      lastResult: 'posted PR #42',
+    };
+    const deps = createDeps({
+      queueRetryDelayMs: normalRetryDelayMs,
+      queueProcessMaxPasses: 3,
+      readPendingQueue: vi.fn()
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [originalJob] })
+        .mockReturnValueOnce({ version: 1, jobs: [stalePrMetadataAfterFirstPass] })
+        .mockReturnValueOnce({ version: 1, jobs: [stalePrMetadataAfterFirstPass] }),
+      processPendingPrJobs: vi.fn(async (options) => {
+        if (options.queue.jobs[0]?.attempts === 0) {
+          options.writeQueue({ version: 1, jobs: [stalePrMetadataAfterFirstPass] });
           return;
         }
         options.writeQueue({ version: 1, jobs: [completedAfterSecondPass] });
