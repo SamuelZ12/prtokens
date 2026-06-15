@@ -58,7 +58,7 @@ describe('processPendingPrJobs', () => {
     }));
   });
 
-  it('marks stale moved branches failed without posting', async () => {
+  it('keeps a job pending when the remote has not reached the pushed head yet', async () => {
     const post = vi.fn();
     const queue: PendingPrQueue = { version: 1, jobs: [job()] };
     const writeQueue = vi.fn();
@@ -75,7 +75,54 @@ describe('processPendingPrJobs', () => {
 
     expect(post).not.toHaveBeenCalled();
     expect(writeQueue).toHaveBeenCalledWith(expect.objectContaining({
-      jobs: [expect.objectContaining({ status: 'failed', lastResult: 'branch moved before PR appeared' })],
+      jobs: [expect.objectContaining({ status: 'pending', attempts: 1, lastResult: 'remote has not reached pushed head yet' })],
+    }));
+  });
+
+  it('keeps a job pending when the remote head is not available yet', async () => {
+    const post = vi.fn();
+    const queue: PendingPrQueue = { version: 1, jobs: [job()] };
+    const writeQueue = vi.fn();
+
+    await processPendingPrJobs({
+      queue,
+      now: new Date('2026-06-14T00:10:00.000Z'),
+      retryWindowMs: 30 * 60_000,
+      retentionMs: 24 * 60 * 60_000,
+      readRemoteHead: vi.fn().mockResolvedValue(undefined),
+      post,
+      writeQueue,
+    });
+
+    expect(post).not.toHaveBeenCalled();
+    expect(writeQueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobs: [expect.objectContaining({ status: 'pending', attempts: 1, lastResult: 'remote has not reached pushed head yet' })],
+    }));
+  });
+
+  it('marks an older same-branch pending job superseded instead of fast retrying it', async () => {
+    const post = vi.fn().mockResolvedValue({ kind: 'no-pr', branch: 'feature/prtokens', message: 'No pull request found for current branch.' });
+    const older = job({ id: 'older', headSha: 'aaaaaaaaaaaaaaaa', queuedAt: '2026-06-14T00:00:00.000Z' });
+    const newer = job({ id: 'newer', headSha: 'bbbbbbbbbbbbbbbb', queuedAt: '2026-06-14T00:01:00.000Z' });
+    const queue: PendingPrQueue = { version: 1, jobs: [older, newer] };
+    const writeQueue = vi.fn();
+
+    await processPendingPrJobs({
+      queue,
+      now: new Date('2026-06-14T00:10:00.000Z'),
+      retryWindowMs: 30 * 60_000,
+      retentionMs: 24 * 60 * 60_000,
+      readRemoteHead: vi.fn().mockResolvedValueOnce('bbbbbbbbbbbbbbbb').mockResolvedValueOnce('bbbbbbbbbbbbbbbb'),
+      post,
+      writeQueue,
+    });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(writeQueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobs: [
+        expect.objectContaining({ id: 'older', status: 'completed', attempts: 1, lastResult: 'superseded by newer queued head' }),
+        expect.objectContaining({ id: 'newer', status: 'pending', attempts: 1, lastResult: 'No pull request found for current branch.' }),
+      ],
     }));
   });
 

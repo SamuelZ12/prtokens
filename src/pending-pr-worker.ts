@@ -1,6 +1,8 @@
 import type { PostPrtokensResult } from './pr-posting.js';
 import { pruneQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
 
+export const remoteHeadNotReachedResult = 'remote has not reached pushed head yet';
+
 export interface ProcessPendingPrJobsOptions {
   queue: PendingPrQueue;
   now: Date;
@@ -27,6 +29,11 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
       continue;
     }
 
+    if (isSupersededByNewerJob(job, queue.jobs)) {
+      jobs.push({ ...job, attempts: job.attempts + 1, status: 'completed', lastAttemptAt: options.now.toISOString(), lastResult: 'superseded by newer queued head' });
+      continue;
+    }
+
     let remoteHead: string | undefined;
     try {
       remoteHead = await options.readRemoteHead(job);
@@ -35,8 +42,14 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
       continue;
     }
 
-    if (remoteHead !== undefined && remoteHead !== job.headSha) {
-      jobs.push({ ...job, status: 'failed', lastAttemptAt: options.now.toISOString(), lastResult: 'branch moved before PR appeared' });
+    if (remoteHead === undefined || remoteHead !== job.headSha) {
+      jobs.push({
+        ...job,
+        attempts: job.attempts + 1,
+        status: 'pending',
+        lastAttemptAt: options.now.toISOString(),
+        lastResult: remoteHeadNotReachedResult,
+      });
       continue;
     }
 
@@ -52,6 +65,18 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
   }
 
   options.writeQueue({ version: 1, jobs });
+}
+
+function isSupersededByNewerJob(job: PendingPrJob, jobs: PendingPrJob[]): boolean {
+  return jobs.some((candidate) => (
+    candidate !== job
+    && (candidate.status === 'pending' || candidate.status === 'completed')
+    && candidate.repoRoot === job.repoRoot
+    && candidate.remoteName === job.remoteName
+    && candidate.remoteBranch === job.remoteBranch
+    && candidate.headSha !== job.headSha
+    && Date.parse(candidate.queuedAt) > Date.parse(job.queuedAt)
+  ));
 }
 
 function applyPostResult(job: PendingPrJob, result: PostPrtokensResult, now: Date): PendingPrJob {

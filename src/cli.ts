@@ -18,14 +18,15 @@ import {
   type PreflightResult,
 } from './hook-installer.js';
 import { defaultQueuePath, enqueuePendingPr, formatQueueStatus, makePendingPrJobId, mergePendingQueue, readPendingQueue, scrubPendingQueue, withPendingQueueProcessLock, writePendingQueue, type PendingPrJob, type PendingPrQueue } from './pending-pr-queue.js';
-import { processPendingPrJobs } from './pending-pr-worker.js';
-import { ghSetupMessage, postPrtokensForCurrentRepo, printPostResult } from './pr-posting.js';
+import { processPendingPrJobs, remoteHeadNotReachedResult } from './pending-pr-worker.js';
+import { ghSetupMessage, postPrtokensForCurrentRepo, prMetadataNotReachedHeadMessage, printPostResult } from './pr-posting.js';
 import { readAllUsage } from './usage-readers.js';
 
 const queueRetryWindowMs = 30 * 60_000;
 const queueRetentionMs = 24 * 60 * 60_000;
 const defaultQueueRetryDelayMs = 30_000;
-const defaultQueueProcessMaxPasses = Math.ceil(queueRetryWindowMs / defaultQueueRetryDelayMs);
+const staleRemoteHeadQueueRetryDelayMs = 1_000;
+const defaultQueueProcessMaxPasses = Math.ceil(queueRetryWindowMs / Math.min(defaultQueueRetryDelayMs, staleRemoteHeadQueueRetryDelayMs));
 
 export interface CliDeps {
   cwd: string;
@@ -192,6 +193,10 @@ function runGitLsRemote(cwd: string, remoteName: string, remoteRef: string): Pro
     child.on('close', (code) => {
       if (code !== 0) {
         const details = stderr.trim();
+        if (code === 2 && details.length === 0) {
+          resolve(undefined);
+          return;
+        }
         reject(new Error(`git ls-remote failed for ${remoteRef} on ${remoteName}${details.length > 0 ? `: ${details}` : ` with exit code ${code ?? 'unknown'}`}`));
         return;
       }
@@ -331,10 +336,11 @@ async function runProcessQueue(deps: CliDeps): Promise<number> {
         },
       });
 
-      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(queueAfterPass ?? originalQueue, now)) {
+      const latestQueue = queueAfterPass ?? originalQueue;
+      if (pass === maxPasses - 1 || !hasRetryablePendingJobs(latestQueue, now)) {
         break;
       }
-      await deps.sleep(deps.queueRetryDelayMs);
+      await deps.sleep(queueRetryDelayMsFor(latestQueue, now, deps.queueRetryDelayMs));
     }
   });
   return 0;
@@ -355,6 +361,15 @@ function mergeProcessedQueue(originalJobIds: Set<string>, processedQueue: Pendin
 
 function hasRetryablePendingJobs(queue: PendingPrQueue, now: Date): boolean {
   return queue.jobs.some((job) => job.status === 'pending' && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs);
+}
+
+function queueRetryDelayMsFor(queue: PendingPrQueue, now: Date, normalRetryDelayMs: number): number {
+  const hasPushedHeadNotReadyJob = queue.jobs.some((job) => (
+    job.status === 'pending'
+    && (job.lastResult === remoteHeadNotReachedResult || job.lastResult === prMetadataNotReachedHeadMessage)
+    && now.getTime() - Date.parse(job.queuedAt) <= queueRetryWindowMs
+  ));
+  return hasPushedHeadNotReadyJob ? Math.min(staleRemoteHeadQueueRetryDelayMs, normalRetryDelayMs) : normalRetryDelayMs;
 }
 
 function chooseMergedJob(processedJob: PendingPrJob, latestJob: PendingPrJob | undefined): PendingPrJob {
@@ -415,10 +430,9 @@ function parseHookPushedRefFlags(argv: string[], stderr: (message: string) => vo
 
 async function scheduleProcessQueue(deps: CliDeps): Promise<void> {
   try {
-    if (deps.processPendingPrJobs === processPendingPrJobs) {
+    await runProcessQueue({ ...deps, queueProcessMaxPasses: 1 });
+    if (hasRetryablePendingJobs(deps.readPendingQueue(deps.queuePath), deps.now())) {
       spawnDetachedProcessQueue();
-    } else {
-      await runProcessQueue(deps);
     }
   } catch (error) {
     deps.stderr(error instanceof Error ? error.message : String(error));

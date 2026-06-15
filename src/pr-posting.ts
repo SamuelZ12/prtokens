@@ -11,6 +11,7 @@ type AgentSummary = NonNullable<RenderAuthorInput['agents']>[number];
 
 export const noUsageMessage = 'No coding-agent usage found for this repo (checked Claude Code, Codex, OpenCode).';
 export const ghSetupMessage = 'Install GitHub CLI and run gh auth login.';
+export const prMetadataNotReachedHeadMessage = 'Pull request metadata has not reached pushed head yet.';
 
 const firstCommitFallbackLookbackMs = 30 * 60_000;
 
@@ -61,6 +62,10 @@ export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): 
 
   if (resolvedPr.kind === 'no-pr') {
     return { kind: 'no-pr', branch: resolvedPr.branch, message: resolvedPr.message };
+  }
+
+  if (options.headSha !== undefined && !resolvedPr.commits.some((commit) => commit.sha === options.headSha)) {
+    return { kind: 'no-pr', branch: resolvedPr.branch, message: prMetadataNotReachedHeadMessage };
   }
 
   const usage = await options.readAllUsage({
