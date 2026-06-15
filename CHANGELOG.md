@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.4 - 2026-06-14
+
+### Fixed
+
+- Process automatic PR posts immediately after pushes.
+- Retry pushed-head and stale PR metadata checks faster.
+- Preserve pending PR post jobs when new branches are pushed.
+- Link the generated prtokens footer to the repository.
+
 ## 0.4.3 - 2026-06-14
 
 ### Fixed
