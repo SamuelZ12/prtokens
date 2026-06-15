@@ -1,6 +1,6 @@
 {
   "name": "prtokens",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Attribute coding-agent token usage to GitHub pull requests.",
   "type": "module",
   "main": "./dist/index.js",

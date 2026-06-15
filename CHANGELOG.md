@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.7 - 2026-06-15
+
+### Fixed
+
+- Include the missing changelog entry for 0.4.6 in the published package.
+
+## 0.4.6 - 2026-06-15
+
+### Fixed
+
+- Remove the OpenCode child-session note from PR token comments.
+- Clean up preserved legacy comment sections by stripping the old OpenCode session note.
+
 ## 0.4.5 - 2026-06-15
 
 ### Fixed
