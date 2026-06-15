@@ -1361,6 +1361,35 @@ describe('runCli', () => {
 });
 
 describe('postPrtokensForCurrentRepo', () => {
+  it('does not post when PR commit metadata has not reached the pushed head', async () => {
+    const deps = createDeps({
+      resolvePullRequest: vi.fn().mockResolvedValue(okPr({
+        commits: [commit({ sha: 'oldsha1234567890' })],
+      })),
+    });
+
+    await expect(postPrtokensForCurrentRepo({
+      cwd: '/repo',
+      dryRun: false,
+      json: false,
+      verbose: false,
+      branch: 'feature/prtokens',
+      headSha: 'abcdef1234567890',
+      stdout: deps.stdout,
+      stderr: deps.stderr,
+      readAllUsage: deps.readAllUsage,
+      resolvePullRequest: deps.resolvePullRequest,
+      ensureGhReady: deps.ensureGhReady,
+      upsertPrComment: deps.upsertPrComment,
+    })).resolves.toEqual({
+      kind: 'no-pr',
+      branch: 'feature/prtokens',
+      message: 'Pull request metadata has not reached pushed head yet.',
+    });
+
+    expect(deps.upsertPrComment).not.toHaveBeenCalled();
+  });
+
   it('passes the provided runner to PR resolution', async () => {
     const deps = createDeps();
     const runner = { run: vi.fn() };

@@ -63,6 +63,10 @@ export async function postPrtokensForCurrentRepo(options: PostPrtokensOptions): 
     return { kind: 'no-pr', branch: resolvedPr.branch, message: resolvedPr.message };
   }
 
+  if (options.headSha !== undefined && !resolvedPr.commits.some((commit) => commit.sha === options.headSha)) {
+    return { kind: 'no-pr', branch: resolvedPr.branch, message: 'Pull request metadata has not reached pushed head yet.' };
+  }
+
   const usage = await options.readAllUsage({
     repoRoot: resolvedPr.repoRoot,
     repoRootAliases: resolvedPr.worktreeRoots,

@@ -36,7 +36,13 @@ export async function processPendingPrJobs(options: ProcessPendingPrJobsOptions)
     }
 
     if (remoteHead !== undefined && remoteHead !== job.headSha) {
-      jobs.push({ ...job, status: 'failed', lastAttemptAt: options.now.toISOString(), lastResult: 'branch moved before PR appeared' });
+      jobs.push({
+        ...job,
+        attempts: job.attempts + 1,
+        status: 'pending',
+        lastAttemptAt: options.now.toISOString(),
+        lastResult: 'remote has not reached pushed head yet',
+      });
       continue;
     }
 

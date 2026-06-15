@@ -58,7 +58,7 @@ describe('processPendingPrJobs', () => {
     }));
   });
 
-  it('marks stale moved branches failed without posting', async () => {
+  it('keeps a job pending when the remote has not reached the pushed head yet', async () => {
     const post = vi.fn();
     const queue: PendingPrQueue = { version: 1, jobs: [job()] };
     const writeQueue = vi.fn();
@@ -75,7 +75,7 @@ describe('processPendingPrJobs', () => {
 
     expect(post).not.toHaveBeenCalled();
     expect(writeQueue).toHaveBeenCalledWith(expect.objectContaining({
-      jobs: [expect.objectContaining({ status: 'failed', lastResult: 'branch moved before PR appeared' })],
+      jobs: [expect.objectContaining({ status: 'pending', attempts: 1, lastResult: 'remote has not reached pushed head yet' })],
     }));
   });
 
